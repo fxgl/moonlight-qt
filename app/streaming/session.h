@@ -7,6 +7,7 @@
 #include <Limelight.h>
 #include <opus_multistream.h>
 #include "settings/streamingpreferences.h"
+#include "adaptivequalitycontroller.h"
 #include "input/input.h"
 #include "video/decoder.h"
 #include "audio/renderers/renderer.h"
@@ -174,6 +175,10 @@ private:
 
     void syncClipboardToHost();
 
+    void updateAdaptiveQuality(int connectionStatus);
+
+    void initializeAdaptiveQuality();
+
     enum class DecoderAvailability {
         None,
         Software,
@@ -288,6 +293,7 @@ private:
 
     Overlay::OverlayManager m_OverlayManager;
     QByteArray m_LastRemoteClipboardText;
+    std::optional<AdaptiveQualityController> m_AdaptiveQualityController;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

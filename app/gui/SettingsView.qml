@@ -669,7 +669,7 @@ Flickable {
                 Label {
                     width: parent.width
                     id: bitrateTitle
-                    text: qsTr("Video bitrate:")
+                    text: StreamingPreferences.adaptiveBitrate ? qsTr("Maximum video bitrate:") : qsTr("Video bitrate:")
                     font.pointSize: 12
                     wrapMode: Text.Wrap
                 }
@@ -677,7 +677,9 @@ Flickable {
                 Label {
                     width: parent.width
                     id: bitrateDesc
-                    text: qsTr("Lower the bitrate on slower connections. Raise the bitrate to increase image quality.")
+                    text: StreamingPreferences.adaptiveBitrate ?
+                              qsTr("The stream starts at this limit and automatically lowers bitrate or resolution when the connection cannot keep up.") :
+                              qsTr("Lower the bitrate on slower connections. Raise the bitrate to increase image quality.")
                     font.pointSize: 9
                     wrapMode: Text.Wrap
                 }
@@ -699,7 +701,9 @@ Flickable {
                         width: Math.min(bitrateDesc.implicitWidth, parent.width - (resetBitrateButton.visible ? resetBitrateButton.width + parent.spacing : 0))
 
                         onValueChanged: {
-                            bitrateTitle.text = qsTr("Video bitrate: %1 Mbps").arg(value / 1000.0)
+                            bitrateTitle.text = StreamingPreferences.adaptiveBitrate ?
+                                                qsTr("Maximum video bitrate: %1 Mbps").arg(value / 1000.0) :
+                                                qsTr("Video bitrate: %1 Mbps").arg(value / 1000.0)
                             StreamingPreferences.bitrateKbps = value
                         }
 
@@ -724,6 +728,21 @@ Flickable {
                             slider.value = defaultBitrate
                         }
                     }
+                }
+
+                CheckBox {
+                    id: adaptiveBitrate
+                    text: qsTr("Automatically adjust quality to network conditions")
+                    checked: StreamingPreferences.adaptiveBitrate
+                    onClicked: {
+                        StreamingPreferences.adaptiveBitrate = checked
+                        slider.valueChanged()
+                    }
+
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 10000
+                    ToolTip.text: qsTr("The selected resolution and bitrate become upper limits. Moonlight reduces bitrate first, then resolution, and restores quality after the connection remains stable.")
                 }
 
                 Label {

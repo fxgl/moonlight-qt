@@ -178,6 +178,8 @@ void Session::clConnectionStatusUpdate(int connectionStatus)
                 "Connection status update: %d",
                 connectionStatus);
 
+    s_ActiveSession->updateAdaptiveQuality(connectionStatus);
+
     if (!s_ActiveSession->m_Preferences->connectionWarnings) {
         return;
     }
@@ -191,6 +193,9 @@ void Session::clConnectionStatusUpdate(int connectionStatus)
     {
     case CONN_STATUS_POOR:
         s_ActiveSession->m_OverlayManager.updateOverlayText(Overlay::OverlayStatusUpdate,
+                                                            s_ActiveSession->m_Preferences->adaptiveBitrate &&
+                                                                    (LiGetHostFeatureFlags() & LI_FF_ADAPTIVE_BITRATE) ?
+                                                                "Slow connection to PC\nAdjusting stream quality" :
                                                             s_ActiveSession->m_StreamConfig.bitrate > 5000 ?
                                                                 "Slow connection to PC\nReduce your bitrate" : "Poor connection to PC");
         s_ActiveSession->m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, true);
@@ -1726,6 +1731,8 @@ bool Session::startConnectionAsync()
     }
 
     LiSetClipboardSyncEnabled(m_Preferences->clipboardSync);
+    LiSetAdaptiveBitrateEnabled(m_Preferences->adaptiveBitrate);
+    initializeAdaptiveQuality();
     int err = LiStartConnection(&hostInfo, &m_StreamConfig, &k_ConnCallbacks,
                                 &m_VideoCallbacks, &m_AudioCallbacks,
                                 NULL, 0, NULL, 0);
@@ -1737,6 +1744,71 @@ bool Session::startConnectionAsync()
 
     emit connectionStarted();
     return true;
+}
+
+void Session::initializeAdaptiveQuality()
+{
+    std::vector<AdaptiveQualityController::Tier> tiers;
+
+    static const int resolutionHeights[] = {2160, 1440, 1080, 720, 540, 360};
+    const double aspectRatio = static_cast<double>(m_StreamConfig.width) / m_StreamConfig.height;
+    auto appendTier = [&](int width, int height, bool maximumTier) {
+        const int recommendedBitrate = StreamingPreferences::getDefaultBitrate(width,
+                                                                               height,
+                                                                               m_StreamConfig.fps,
+                                                                               m_Preferences->enableYUV444);
+        tiers.push_back({width,
+                         height,
+                         qMin(m_StreamConfig.bitrate, qMax(500, recommendedBitrate * 60 / 100)),
+                         maximumTier ? m_StreamConfig.bitrate : qMin(m_StreamConfig.bitrate, recommendedBitrate)});
+    };
+
+    appendTier(m_StreamConfig.width, m_StreamConfig.height, true);
+    for (int height : resolutionHeights) {
+        if (height >= m_StreamConfig.height) {
+            continue;
+        }
+
+        int width = qRound(height * aspectRatio) & ~1;
+        if (width < 320 || (width == tiers.back().width && height == tiers.back().height)) {
+            continue;
+        }
+        appendTier(width, height, false);
+    }
+
+    m_AdaptiveQualityController.emplace(std::move(tiers), m_StreamConfig.bitrate);
+}
+
+void Session::updateAdaptiveQuality(int connectionStatus)
+{
+    if (!m_Preferences->adaptiveBitrate ||
+            !(LiGetHostFeatureFlags() & LI_FF_ADAPTIVE_BITRATE) ||
+            !m_AdaptiveQualityController) {
+        return;
+    }
+    if (connectionStatus != CONN_STATUS_POOR && connectionStatus != CONN_STATUS_OKAY) {
+        return;
+    }
+
+    auto previousController = *m_AdaptiveQualityController;
+    auto nextQuality = m_AdaptiveQualityController->update(
+        connectionStatus == CONN_STATUS_POOR ? AdaptiveQualityController::ConnectionStatus::Poor :
+                                               AdaptiveQualityController::ConnectionStatus::Okay);
+    if (!nextQuality) {
+        return;
+    }
+
+    int err = LiRequestAdaptiveStreamConfig(nextQuality->width, nextQuality->height, nextQuality->bitrateKbps);
+    if (err == 0) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Adaptive stream quality changed to %dx%d at %d kbps",
+                    nextQuality->width, nextQuality->height, nextQuality->bitrateKbps);
+    }
+    else {
+        *m_AdaptiveQualityController = std::move(previousController);
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Adaptive stream quality request failed: %d", err);
+    }
 }
 
 void Session::syncClipboardToHost()
