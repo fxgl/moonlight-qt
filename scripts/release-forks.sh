@@ -62,6 +62,13 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
 need_value() { [[ -n "${2:-}" ]] || die "$1 requires a value"; }
 
+write_sha256() {
+  local artifact="$1" dir name
+  dir="$(dirname "${artifact}")"
+  name="$(basename "${artifact}")"
+  (cd "${dir}" && LC_ALL=C shasum -a 256 "${name}" >"${name}.sha256")
+}
+
 validate_version() {
   [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
     die "$1 must contain exactly three numeric components: $2"
@@ -225,7 +232,7 @@ build_moonlight() {
   local dsym="${out}/Moonlight-${MOONLIGHT_VERSION}.dsym"
   [[ ! -d "${dsym}" ]] || ditto -c -k --sequesterRsrc --keepParent \
     "${dsym}" "${out}/Moonlight-${MOONLIGHT_VERSION}-dSYM.zip"
-  LC_ALL=C shasum -a 256 "${dmg}" >"${dmg}.sha256"
+  write_sha256 "${dmg}"
 }
 
 verify_dmg_app() {
@@ -293,7 +300,7 @@ build_sunshine() {
     xcrun stapler validate "${dmg}"
     verify_dmg_app "${dmg}" Sunshine true
   fi
-  LC_ALL=C shasum -a 256 "${dmg}" >"${dmg}.sha256"
+  write_sha256 "${dmg}"
 }
 
 ensure_tag() {
