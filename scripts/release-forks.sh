@@ -138,8 +138,8 @@ check_submodules() {
 }
 
 preflight() {
-  [[ -d "${MOONLIGHT_DIR}/.git" ]] || die "Moonlight checkout not found"
-  [[ -d "${SUNSHINE_DIR}/.git" ]] || die "Sunshine checkout not found: ${SUNSHINE_DIR}"
+  [[ -e "${MOONLIGHT_DIR}/.git" ]] || die "Moonlight checkout not found"
+  [[ -e "${SUNSHINE_DIR}/.git" ]] || die "Sunshine checkout not found: ${SUNSHINE_DIR}"
   validate_version "Moonlight version" "${MOONLIGHT_VERSION}"
   validate_version "Sunshine version" "${SUNSHINE_VERSION}"
   for cmd in git python3 cmake cpack create-dmg codesign security lipo hdiutil ditto shasum; do
