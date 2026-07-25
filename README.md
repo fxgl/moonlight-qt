@@ -59,6 +59,22 @@ Hosting for Moonlight's Debian and L4T package repositories is graciously provid
 
 ## Building
 
+### Coordinated fxgl macOS releases
+
+This fork includes [`scripts/release-forks.sh`](scripts/release-forks.sh), which coordinates the matching Moonlight, Sunshine, and `moonlight-common-c` checkouts. It builds Moonlight as a universal macOS app, builds Sunshine for the current Mac architecture, runs the Sunshine tests, signs both apps with a Developer ID Application identity, notarizes and staples the DMGs, verifies the results, and generates SHA-256 files.
+
+The local-only mode does not commit, tag, push, or create GitHub releases. Its Moonlight version must already match `app/version.txt`:
+
+```bash
+scripts/release-forks.sh build \
+  --moonlight-version 6.1.0 \
+  --sunshine-version 2026.725.170000 \
+  --signing-identity "Developer ID Application: FX GAMES FZ LLC (V25VKGTW55)" \
+  --notary-profile notarytool-password
+```
+
+Use `publish` instead of `build` for the complete release. It requires clean tracked trees, commits only the Moonlight version bump, finishes and verifies every artifact before pushing, then pushes the common protocol repository before both parents and creates the two GitHub releases. Run with `--bootstrap` once to install the Homebrew dependencies and the official universal Qt SDK. A `.cer` file alone cannot sign code; the Developer ID certificate and its private key must be present as a valid identity in Keychain. See `scripts/release-forks.sh --help` for unsigned test builds and other options.
+
 ### Windows Build Requirements
 * Qt 6.7 SDK or later (earlier versions may work but are not officially supported)
 * [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/) (Community edition is fine)
