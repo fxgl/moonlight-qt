@@ -68,8 +68,16 @@
     NSWindow* window;
     NSTextField* speedLabel;
     NSTextField* lossLabel;
+    NSTextField* fecLabel;
+    NSTextField* droppedLabel;
     NSTextField* bitrateLabel;
     NSTextField* resolutionLabel;
+    NSTextField* rttLabel;
+    NSTextField* jitterLabel;
+    NSTextField* latencyLabel;
+    NSTextField* fpsLabel;
+    NSTextField* hostLatencyLabel;
+    NSTextField* clientLatencyLabel;
     NSTextField* countdownLabel;
     NSButton* increaseButton;
     NSButton* decreaseButton;
@@ -114,7 +122,7 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     if (!self) return nil;
     actions = std::move(callbacks);
 
-    window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 640, 480)
+    window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 720, 600)
                                          styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                                                    NSWindowStyleMaskMiniaturizable
                                            backing:NSBackingStoreBuffered
@@ -124,23 +132,39 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     [window setReleasedWhenClosed:NO];
     NSView* content = [window contentView];
 
-    speedLabel = makeLabel(NSMakeRect(20, 435, 190, 24), 15);
-    lossLabel = makeLabel(NSMakeRect(220, 435, 180, 24), 15);
-    bitrateLabel = makeLabel(NSMakeRect(410, 435, 210, 24), 15);
-    resolutionLabel = makeLabel(NSMakeRect(20, 405, 240, 24), 15);
-    countdownLabel = makeLabel(NSMakeRect(270, 405, 350, 24), 15);
+    speedLabel = makeLabel(NSMakeRect(20, 555, 215, 24), 15);
+    bitrateLabel = makeLabel(NSMakeRect(250, 555, 215, 24), 15);
+    resolutionLabel = makeLabel(NSMakeRect(480, 555, 220, 24), 15);
+    lossLabel = makeLabel(NSMakeRect(20, 525, 215, 24), 14);
+    fecLabel = makeLabel(NSMakeRect(250, 525, 215, 24), 14);
+    droppedLabel = makeLabel(NSMakeRect(480, 525, 220, 24), 12);
+    rttLabel = makeLabel(NSMakeRect(20, 495, 215, 24), 14);
+    jitterLabel = makeLabel(NSMakeRect(250, 495, 215, 24), 14);
+    latencyLabel = makeLabel(NSMakeRect(480, 495, 220, 24), 14);
+    fpsLabel = makeLabel(NSMakeRect(20, 465, 215, 24), 13);
+    hostLatencyLabel = makeLabel(NSMakeRect(250, 465, 215, 24), 13);
+    clientLatencyLabel = makeLabel(NSMakeRect(480, 465, 220, 24), 11);
+    countdownLabel = makeLabel(NSMakeRect(20, 430, 680, 24), 14);
     [content addSubview:speedLabel];
-    [content addSubview:lossLabel];
     [content addSubview:bitrateLabel];
     [content addSubview:resolutionLabel];
+    [content addSubview:lossLabel];
+    [content addSubview:fecLabel];
+    [content addSubview:droppedLabel];
+    [content addSubview:rttLabel];
+    [content addSubview:jitterLabel];
+    [content addSubview:latencyLabel];
+    [content addSubview:fpsLabel];
+    [content addSubview:hostLatencyLabel];
+    [content addSubview:clientLatencyLabel];
     [content addSubview:countdownLabel];
 
-    graph = [[MLStreamGraphView alloc] initWithFrame:NSMakeRect(20, 145, 600, 245)];
+    graph = [[MLStreamGraphView alloc] initWithFrame:NSMakeRect(20, 150, 680, 260)];
     [graph setWantsLayer:YES];
     [graph.layer setCornerRadius:6.0];
     [content addSubview:graph];
 
-    NSTextField* legend = makeLabel(NSMakeRect(20, 118, 600, 20), 12);
+    NSTextField* legend = makeLabel(NSMakeRect(20, 123, 680, 20), 12);
     [legend setStringValue:@"Green: throughput     Blue: target bitrate     Red: packet loss"];
     [content addSubview:legend];
     [legend release];
@@ -150,11 +174,11 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     [content addSubview:decreaseButton];
     [content addSubview:increaseButton];
 
-    displayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(255, 72, 260, 32) pullsDown:NO];
+    displayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(255, 72, 340, 32) pullsDown:NO];
     [displayPopup setTarget:self];
     [displayPopup setAction:@selector(switchDisplay:)];
     [content addSubview:displayPopup];
-    [content addSubview:makeButton(@"Refresh", NSMakeRect(525, 72, 95, 32), self, @selector(refreshDisplays:))];
+    [content addSubview:makeButton(@"Refresh", NSMakeRect(605, 72, 95, 32), self, @selector(refreshDisplays:))];
 
     NSMenu* streamMenu = [[NSMenu alloc] initWithTitle:@"Stream"];
     NSMenuItem* monitorItem = [[NSMenuItem alloc] initWithTitle:@"Connection Monitor…"
@@ -177,8 +201,16 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     [rootMenuItem release];
     [speedLabel release];
     [lossLabel release];
+    [fecLabel release];
+    [droppedLabel release];
     [bitrateLabel release];
     [resolutionLabel release];
+    [rttLabel release];
+    [jitterLabel release];
+    [latencyLabel release];
+    [fpsLabel release];
+    [hostLatencyLabel release];
+    [clientLatencyLabel release];
     [countdownLabel release];
     [increaseButton release];
     [decreaseButton release];
@@ -202,8 +234,25 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
 {
     [speedLabel setStringValue:[NSString stringWithFormat:@"Speed %.2f Mbps", snapshot.throughputMbps]];
     [lossLabel setStringValue:[NSString stringWithFormat:@"Loss %.2f%%", snapshot.packetLossPercent]];
+    [fecLabel setStringValue:[NSString stringWithFormat:@"FEC recovered %llu/s",
+                                                        static_cast<unsigned long long>(snapshot.fecRecoveredPackets)]];
+    [droppedLabel setStringValue:[NSString stringWithFormat:@"Frame drop %.2f%% · pacer %.2f%%",
+                                                            snapshot.networkDroppedFramePercent,
+                                                            snapshot.pacerDroppedFramePercent]];
     [bitrateLabel setStringValue:[NSString stringWithFormat:@"Bitrate %.2f Mbps", snapshot.targetBitrateKbps / 1000.0]];
     [resolutionLabel setStringValue:[NSString stringWithFormat:@"Resolution %d × %d", snapshot.width, snapshot.height]];
+    [rttLabel setStringValue:[NSString stringWithFormat:@"RTT %.1f ms", snapshot.rttMs]];
+    [jitterLabel setStringValue:[NSString stringWithFormat:@"RTT jitter %.1f ms", snapshot.networkJitterMs]];
+    [latencyLabel setStringValue:[NSString stringWithFormat:@"Est. lag %.1f ms", snapshot.estimatedLatencyMs]];
+    [fpsLabel setStringValue:[NSString stringWithFormat:@"FPS %.1f / %.1f / %.1f",
+                                                     snapshot.receivedFps,
+                                                     snapshot.decodedFps,
+                                                     snapshot.renderedFps]];
+    [hostLatencyLabel setStringValue:[NSString stringWithFormat:@"Host %.1f ms", snapshot.hostLatencyMs]];
+    [clientLatencyLabel setStringValue:[NSString stringWithFormat:@"Decode %.1f · Pace %.1f · Render %.1f ms",
+                                                               snapshot.decodeLatencyMs,
+                                                               snapshot.pacerLatencyMs,
+                                                               snapshot.renderLatencyMs]];
     if (!snapshot.adaptiveQualityEnabled) {
         [countdownLabel setStringValue:@"Automatic scaling disabled"];
     }

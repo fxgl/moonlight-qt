@@ -23,6 +23,7 @@ typedef struct _VIDEO_STATS {
     uint64_t totalDecodeTimeUs;                // high-res (1us)
     uint64_t totalPacerTimeUs;                 // high-res (1us)
     uint64_t totalRenderTimeUs;                // high-res (1us)
+    uint64_t measurementDurationUs;            // duration represented by this stats window
     uint32_t lastRtt;                          // low-res from enet (1ms)
     uint32_t lastRttVariance;                  // low-res from enet (1ms)
     double totalFps;                           // high-res
@@ -77,4 +78,8 @@ public:
     virtual void renderFrameOnMainThread() = 0;
     virtual void setHdrMode(bool enabled) = 0;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) = 0;
+    virtual bool getVideoStats(VIDEO_STATS& stats) {
+        (void)stats;
+        return false;
+    }
 };

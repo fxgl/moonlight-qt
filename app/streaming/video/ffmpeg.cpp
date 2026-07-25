@@ -249,6 +249,7 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(bool testOnly)
     SDL_zero(m_ActiveWndVideoStats);
     SDL_zero(m_LastWndVideoStats);
     SDL_zero(m_GlobalVideoStats);
+    SDL_zero(m_LastMonitorVideoStats);
 
     SDL_AtomicSet(&m_DecoderThreadShouldQuit, 0);
 }
@@ -269,6 +270,17 @@ FFmpegVideoDecoder::~FFmpegVideoDecoder()
 IFFmpegRenderer* FFmpegVideoDecoder::getBackendRenderer()
 {
     return m_BackendRenderer;
+}
+
+bool FFmpegVideoDecoder::getVideoStats(VIDEO_STATS& stats)
+{
+    QMutexLocker locker(&m_MonitorStatsLock);
+    if (m_LastMonitorVideoStats.measurementDurationUs == 0) {
+        return false;
+    }
+
+    stats = m_LastMonitorVideoStats;
+    return true;
 }
 
 void FFmpegVideoDecoder::reset()
@@ -2135,7 +2147,11 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     m_BwTracker.AddBytes(du->fullLength);
 
     // Flip stats windows roughly every second
-    if (LiGetMicroseconds() > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
+    const uint64_t nowUs = LiGetMicroseconds();
+    if (nowUs > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
+        m_ActiveWndVideoStats.measurementDurationUs =
+                nowUs - m_ActiveWndVideoStats.measurementStartUs;
+
         // Update overlay stats if it's enabled
         if (Session::get()->getOverlayManager().isOverlayEnabled(Overlay::OverlayDebug)) {
             VIDEO_STATS lastTwoWndStats = {};
@@ -2151,10 +2167,15 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
         // Accumulate these values into the global stats
         addVideoStats(m_ActiveWndVideoStats, m_GlobalVideoStats);
 
+        {
+            QMutexLocker locker(&m_MonitorStatsLock);
+            m_LastMonitorVideoStats = m_ActiveWndVideoStats;
+        }
+
         // Move this window into the last window slot and clear it for next window
         SDL_memcpy(&m_LastWndVideoStats, &m_ActiveWndVideoStats, sizeof(m_ActiveWndVideoStats));
         SDL_zero(m_ActiveWndVideoStats);
-        m_ActiveWndVideoStats.measurementStartUs = LiGetMicroseconds();
+        m_ActiveWndVideoStats.measurementStartUs = nowUs;
     }
 
     if (du->frameHostProcessingLatency != 0) {
@@ -2236,4 +2257,3 @@ void FFmpegVideoDecoder::renderFrameOnMainThread()
 {
     m_Pacer->renderOnMainThread();
 }
-

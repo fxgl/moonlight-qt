@@ -17,6 +17,8 @@ private slots:
     void manualControlsApplyImmediately();
     void exposesRecoveryCountdown();
     void calculatesMonitorTelemetry();
+    void ignoresUnusedFecPacketsInMonitorLoss();
+    void reportsDetailedPerformanceTelemetry();
     void capsMonitorHistory();
     void parsesDisplayList();
     void rejectsMalformedDisplayList();
@@ -151,24 +153,56 @@ void AdaptiveQualityControllerTest::calculatesMonitorTelemetry()
 {
     StreamMonitorModel model;
     model.setQuality(1920, 1080, 10000, 9);
-    model.recordCounters({1000, 100, 80, 20}, 1000);
-    model.recordCounters({1001000, 190, 160, 40}, 2000);
+    model.recordCounters({1000, 80, 0}, 1000);
+    model.recordCounters({1001000, 160, 8}, 2000);
 
     const auto& snapshot = model.snapshot();
     QCOMPARE(snapshot.throughputMbps, 8.0);
     QCOMPARE(snapshot.packetLossPercent, 10.0);
+    QCOMPARE(snapshot.fecRecoveredPackets, std::uint64_t(8));
     QCOMPARE(snapshot.targetBitrateKbps, 10000);
     QCOMPARE(snapshot.secondsUntilAutoScale, 9);
     QCOMPARE(snapshot.history.size(), std::size_t(1));
 }
 
+void AdaptiveQualityControllerTest::reportsDetailedPerformanceTelemetry()
+{
+    StreamMonitorModel model;
+    model.setNetworkLatency(10, 2);
+    model.recordPerformance({1000000, 60, 59, 58, 62, 2, 1, 60, 240,
+                             118000, 174000, 58000});
+
+    const auto& snapshot = model.snapshot();
+    QCOMPARE(snapshot.receivedFps, 60.0);
+    QCOMPARE(snapshot.decodedFps, 59.0);
+    QCOMPARE(snapshot.renderedFps, 58.0);
+    QCOMPARE(snapshot.networkDroppedFramePercent, 2.0 * 100.0 / 62.0);
+    QCOMPARE(snapshot.pacerDroppedFramePercent, 1.0 * 100.0 / 62.0);
+    QCOMPARE(snapshot.rttMs, 10.0);
+    QCOMPARE(snapshot.networkJitterMs, 2.0);
+    QCOMPARE(snapshot.hostLatencyMs, 4.0);
+    QCOMPARE(snapshot.decodeLatencyMs, 2.0);
+    QCOMPARE(snapshot.pacerLatencyMs, 3.0);
+    QCOMPARE(snapshot.renderLatencyMs, 1.0);
+    QCOMPARE(snapshot.estimatedLatencyMs, 15.0);
+}
+
+void AdaptiveQualityControllerTest::ignoresUnusedFecPacketsInMonitorLoss()
+{
+    StreamMonitorModel model;
+    model.recordCounters({1000, 100, 0}, 1000);
+    model.recordCounters({1001000, 200, 0}, 2000);
+
+    QCOMPARE(model.snapshot().packetLossPercent, 0.0);
+}
+
 void AdaptiveQualityControllerTest::capsMonitorHistory()
 {
     StreamMonitorModel model(2);
-    model.recordCounters({0, 0, 0, 0}, 1000);
-    model.recordCounters({100, 1, 1, 0}, 2000);
-    model.recordCounters({200, 2, 2, 0}, 3000);
-    model.recordCounters({300, 3, 3, 0}, 4000);
+    model.recordCounters({0, 0, 0}, 1000);
+    model.recordCounters({100, 1, 0}, 2000);
+    model.recordCounters({200, 2, 0}, 3000);
+    model.recordCounters({300, 3, 0}, 4000);
 
     QCOMPARE(model.snapshot().history.size(), std::size_t(2));
 }
