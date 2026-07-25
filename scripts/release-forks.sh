@@ -225,7 +225,7 @@ build_moonlight() {
   local dsym="${out}/Moonlight-${MOONLIGHT_VERSION}.dsym"
   [[ ! -d "${dsym}" ]] || ditto -c -k --sequesterRsrc --keepParent \
     "${dsym}" "${out}/Moonlight-${MOONLIGHT_VERSION}-dSYM.zip"
-  shasum -a 256 "${dmg}" >"${dmg}.sha256"
+  LC_ALL=C shasum -a 256 "${dmg}" >"${dmg}.sha256"
 }
 
 verify_dmg_app() {
@@ -281,7 +281,7 @@ build_sunshine() {
     xcrun stapler validate "${dmg}"
     verify_dmg_app "${dmg}" Sunshine true
   fi
-  shasum -a 256 "${dmg}" >"${dmg}.sha256"
+  LC_ALL=C shasum -a 256 "${dmg}" >"${dmg}.sha256"
 }
 
 ensure_tag() {
