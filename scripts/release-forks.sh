@@ -168,7 +168,7 @@ prepare_moonlight_version() {
   local file="${MOONLIGHT_DIR}/app/version.txt"
   local current
   current="$(<"${file}")"
-  [[ "${current}" != "${MOONLIGHT_VERSION}" ]] || return
+  [[ "${current}" != "${MOONLIGHT_VERSION}" ]] || return 0
   log "Updating Moonlight version ${current} -> ${MOONLIGHT_VERSION}"
   printf '%s\n' "${MOONLIGHT_VERSION}" >"${file}"
   git -C "${MOONLIGHT_DIR}" add app/version.txt
