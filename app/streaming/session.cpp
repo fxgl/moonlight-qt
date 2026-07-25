@@ -29,6 +29,7 @@
 #define SDL_CODE_GAMECONTROLLER_SET_CONTROLLER_LED 104
 #define SDL_CODE_GAMECONTROLLER_SET_ADAPTIVE_TRIGGERS 105
 #define SDL_CODE_SET_CLIPBOARD_TEXT 106
+#define SDL_CODE_SET_HOST_DISPLAY_LIST 107
 
 #include <openssl/rand.h>
 
@@ -42,6 +43,8 @@
 #include <QClipboard>
 #include <QCursor>
 #include <QScreen>
+
+#include <climits>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QQuickOpenGLUtils>
@@ -63,7 +66,8 @@ CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
     Session::clSetMotionEventState,
     Session::clSetControllerLED,
     Session::clSetAdaptiveTriggers,
-    Session::clSetClipboardText
+    Session::clSetClipboardText,
+    Session::clSetHostDisplayList
 };
 
 Session* Session::s_ActiveSession;
@@ -296,6 +300,23 @@ void Session::clSetClipboardText(const char* text, unsigned int length)
     clipboardEvent.user.data1 = utf8Text;
     if (SDL_PushEvent(&clipboardEvent) != 1) {
         delete utf8Text;
+    }
+}
+
+void Session::clSetHostDisplayList(const char* payload, unsigned int length)
+{
+    Session* session = s_ActiveSession;
+    if (!session || length > 16 * 1024) {
+        return;
+    }
+
+    auto* data = new QByteArray(payload, length);
+    SDL_Event displayListEvent = {};
+    displayListEvent.type = SDL_USEREVENT;
+    displayListEvent.user.code = SDL_CODE_SET_HOST_DISPLAY_LIST;
+    displayListEvent.user.data1 = data;
+    if (SDL_PushEvent(&displayListEvent) != 1) {
+        delete data;
     }
 }
 
@@ -1781,6 +1802,7 @@ void Session::initializeAdaptiveQuality()
 
 void Session::updateAdaptiveQuality(int connectionStatus)
 {
+    std::lock_guard<std::mutex> lock(m_AdaptiveQualityMutex);
     if (!m_Preferences->adaptiveBitrate ||
             !(LiGetHostFeatureFlags() & LI_FF_ADAPTIVE_BITRATE) ||
             !m_AdaptiveQualityController) {
@@ -1789,6 +1811,7 @@ void Session::updateAdaptiveQuality(int connectionStatus)
     if (connectionStatus != CONN_STATUS_POOR && connectionStatus != CONN_STATUS_OKAY) {
         return;
     }
+    m_LastAdaptiveStatusUpdate = SDL_GetTicks64();
 
     auto previousController = *m_AdaptiveQualityController;
     auto nextQuality = m_AdaptiveQualityController->update(
@@ -1809,6 +1832,89 @@ void Session::updateAdaptiveQuality(int connectionStatus)
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Adaptive stream quality request failed: %d", err);
     }
+}
+
+void Session::changeAdaptiveQuality(bool increase)
+{
+    std::lock_guard<std::mutex> lock(m_AdaptiveQualityMutex);
+    if (!m_AdaptiveQualityController || !(LiGetHostFeatureFlags() & LI_FF_ADAPTIVE_BITRATE)) {
+        return;
+    }
+
+    auto previousController = *m_AdaptiveQualityController;
+    auto quality = increase ? m_AdaptiveQualityController->increaseQuality() :
+                              m_AdaptiveQualityController->decreaseQuality();
+    if (!quality) {
+        return;
+    }
+
+    const int err = LiRequestAdaptiveStreamConfig(quality->width, quality->height, quality->bitrateKbps);
+    if (err != 0) {
+        *m_AdaptiveQualityController = std::move(previousController);
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Manual stream quality request failed: %d", err);
+    }
+    else {
+        m_LastAdaptiveStatusUpdate = SDL_GetTicks64();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Manual stream quality changed to %dx%d at %d kbps",
+                    quality->width, quality->height, quality->bitrateKbps);
+    }
+}
+
+void Session::refreshStreamMonitor(bool force)
+{
+#ifdef Q_OS_DARWIN
+    if (!m_MacStreamMonitor) {
+        return;
+    }
+
+    const Uint64 now = SDL_GetTicks64();
+    if (!force && now - m_LastStreamMonitorUpdate < 1000) {
+        return;
+    }
+    m_LastStreamMonitorUpdate = now;
+
+    const auto* stats = LiGetRTPVideoStats();
+    if (stats) {
+        m_StreamMonitorModel.recordCounters({stats->receivedBytes,
+                                             stats->packetCountReceived,
+                                             stats->packetCountVideo,
+                                             stats->packetCountFec}, now);
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_AdaptiveQualityMutex);
+        if (m_AdaptiveQualityController) {
+            const auto quality = m_AdaptiveQualityController->current();
+            const bool adaptiveEnabled = m_Preferences->adaptiveBitrate &&
+                    (LiGetHostFeatureFlags() & LI_FF_ADAPTIVE_BITRATE);
+            const auto elapsedSinceStatus = m_LastAdaptiveStatusUpdate > 0 && now > m_LastAdaptiveStatusUpdate ?
+                                                now - m_LastAdaptiveStatusUpdate : 0;
+            const int countdownMs = std::max(0,
+                    m_AdaptiveQualityController->recoverySamplesRemaining() * 3000 -
+                    static_cast<int>(std::min<Uint64>(elapsedSinceStatus, INT_MAX)));
+            m_StreamMonitorModel.setQuality(quality.width,
+                                            quality.height,
+                                            quality.bitrateKbps,
+                                            (countdownMs + 999) / 1000,
+                                            adaptiveEnabled,
+                                            adaptiveEnabled && m_AdaptiveQualityController->canIncrease(),
+                                            adaptiveEnabled && m_AdaptiveQualityController->canDecrease());
+        }
+        else {
+            m_StreamMonitorModel.setQuality(m_ActiveVideoWidth,
+                                            m_ActiveVideoHeight,
+                                            m_StreamConfig.bitrate,
+                                            0,
+                                            false,
+                                            false,
+                                            false);
+        }
+    }
+    m_MacStreamMonitor->update(m_StreamMonitorModel.snapshot());
+#else
+    Q_UNUSED(force);
+#endif
 }
 
 void Session::syncClipboardToHost()
@@ -2076,10 +2182,32 @@ void Session::exec()
     // Switch to async logging mode when we enter the SDL loop
     StreamUtils::enterAsyncLoggingMode();
 
+#ifdef Q_OS_DARWIN
+    {
+        std::lock_guard<std::mutex> lock(m_AdaptiveQualityMutex);
+        m_LastAdaptiveStatusUpdate = SDL_GetTicks64();
+    }
+    m_MacStreamMonitor = std::make_unique<MacStreamMonitor>(MacStreamMonitor::Actions {
+        [this]() { changeAdaptiveQuality(true); refreshStreamMonitor(true); },
+        [this]() { changeAdaptiveQuality(false); refreshStreamMonitor(true); },
+        []() { LiRequestHostDisplayList(); },
+        [](int displayIndex) {
+            if (displayIndex >= 0 && displayIndex <= UINT16_MAX) {
+                LiRequestHostDisplaySwitch(static_cast<unsigned short>(displayIndex));
+            }
+        },
+    });
+    if (LiGetHostFeatureFlags() & LI_FF_LIVE_DISPLAY_SWITCH) {
+        LiRequestHostDisplayList();
+    }
+    refreshStreamMonitor(true);
+#endif
+
     // Hijack this thread to be the SDL main thread. We have to do this
     // because we want to suspend all Qt processing until the stream is over.
     SDL_Event event;
     for (;;) {
+        refreshStreamMonitor();
 #if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(STEAM_LINK)
         // SDL 2.0.18 has a proper wait event implementation that uses platform
         // support to block on events rather than polling on Windows, macOS, X11,
@@ -2162,6 +2290,17 @@ void Session::exec()
                     }
                 }
                 delete utf8Text;
+                break;
+            }
+            case SDL_CODE_SET_HOST_DISPLAY_LIST: {
+                auto* payload = static_cast<QByteArray*>(event.user.data1);
+                if (m_StreamMonitorModel.setDisplaysFromPayload(payload->constData(), payload->size())) {
+                    refreshStreamMonitor(true);
+                }
+                else {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Ignoring malformed host display list");
+                }
+                delete payload;
                 break;
             }
             default:
@@ -2440,6 +2579,9 @@ void Session::exec()
     }
 
 DispatchDeferredCleanup:
+#ifdef Q_OS_DARWIN
+    m_MacStreamMonitor.reset();
+#endif
     // Switch back to synchronous logging mode
     StreamUtils::exitAsyncLoggingMode();
 

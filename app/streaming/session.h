@@ -3,11 +3,17 @@
 #include <QSemaphore>
 #include <QQuickWindow>
 #include <QByteArray>
+#include <memory>
+#include <mutex>
 
 #include <Limelight.h>
 #include <opus_multistream.h>
 #include "settings/streamingpreferences.h"
 #include "adaptivequalitycontroller.h"
+#include "streammonitormodel.h"
+#ifdef Q_OS_DARWIN
+#include "macstreammonitor.h"
+#endif
 #include "input/input.h"
 #include "video/decoder.h"
 #include "audio/renderers/renderer.h"
@@ -177,6 +183,10 @@ private:
 
     void updateAdaptiveQuality(int connectionStatus);
 
+    void changeAdaptiveQuality(bool increase);
+
+    void refreshStreamMonitor(bool force = false);
+
     void initializeAdaptiveQuality();
 
     enum class DecoderAvailability {
@@ -233,6 +243,9 @@ private:
 
     static
     void clSetClipboardText(const char* text, unsigned int length);
+
+    static
+    void clSetHostDisplayList(const char* payload, unsigned int length);
 
     static
     int arInit(int audioConfiguration,
@@ -294,6 +307,13 @@ private:
     Overlay::OverlayManager m_OverlayManager;
     QByteArray m_LastRemoteClipboardText;
     std::optional<AdaptiveQualityController> m_AdaptiveQualityController;
+    std::mutex m_AdaptiveQualityMutex;
+    StreamMonitorModel m_StreamMonitorModel;
+    Uint64 m_LastStreamMonitorUpdate = 0;
+    Uint64 m_LastAdaptiveStatusUpdate = 0;
+#ifdef Q_OS_DARWIN
+    std::unique_ptr<MacStreamMonitor> m_MacStreamMonitor;
+#endif
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

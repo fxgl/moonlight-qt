@@ -8,6 +8,9 @@ INCLUDEPATH += ../app
 
 SOURCES += \
     tst_adaptivequality.cpp \
-    ../app/streaming/adaptivequalitycontroller.cpp
+    ../app/streaming/adaptivequalitycontroller.cpp \
+    ../app/streaming/streammonitormodel.cpp
 
-HEADERS += ../app/streaming/adaptivequalitycontroller.h
+HEADERS += \
+    ../app/streaming/adaptivequalitycontroller.h \
+    ../app/streaming/streammonitormodel.h

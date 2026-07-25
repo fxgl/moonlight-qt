@@ -192,6 +192,7 @@ SOURCES += \
     streaming/input/mouse.cpp \
     streaming/input/reltouch.cpp \
     streaming/adaptivequalitycontroller.cpp \
+    streaming/streammonitormodel.cpp \
     streaming/session.cpp \
     streaming/audio/audio.cpp \
     streaming/audio/renderers/sdlaud.cpp \
@@ -229,6 +230,7 @@ HEADERS += \
     cli/startstream.h \
     settings/streamingpreferences.h \
     streaming/adaptivequalitycontroller.h \
+    streaming/streammonitormodel.h \
     streaming/input/input.h \
     streaming/session.h \
     streaming/audio/renderers/renderer.h \
@@ -410,11 +412,13 @@ macx {
     message(VideoToolbox renderer selected)
 
     SOURCES += \
+        streaming/macstreammonitor.mm \
         streaming/video/ffmpeg-renderers/vt_base.mm \
         streaming/video/ffmpeg-renderers/vt_avsamplelayer.mm \
         streaming/video/ffmpeg-renderers/vt_metal.mm
 
     HEADERS += \
+        streaming/macstreammonitor.h \
         streaming/video/ffmpeg-renderers/vt.h
 }
 discord-rpc {
