@@ -231,7 +231,7 @@ build_moonlight() {
 verify_dmg_app() {
   local dmg="$1" app_name="$2" assess="${3:-false}" mount_dir rc=0
   mount_dir="$(mktemp -d)"
-  hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${dmg}" >/dev/null
+  printf 'Y\n' | hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${dmg}" >/dev/null
   codesign --verify --deep --strict --verbose=2 "${mount_dir}/${app_name}.app" || rc=$?
   if [[ "${assess}" == true ]]; then
     spctl --assess --type execute -vv "${mount_dir}/${app_name}.app" || rc=$?
