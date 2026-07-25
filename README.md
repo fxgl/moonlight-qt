@@ -73,7 +73,9 @@ scripts/release-forks.sh build \
   --notary-profile notarytool-password
 ```
 
-Use `publish` instead of `build` for the complete release. It requires clean tracked trees, commits only the Moonlight version bump, finishes and verifies every artifact before pushing, then pushes the common protocol repository before both parents and creates the two GitHub releases. Run with `--bootstrap` once to install the Homebrew dependencies and the official universal Qt SDK. A `.cer` file alone cannot sign code; the Developer ID certificate and its private key must be present as a valid identity in Keychain. See `scripts/release-forks.sh --help` for unsigned test builds and other options.
+Use `publish` instead of `build` for the complete release. It requires clean tracked trees, commits only the Moonlight version bump, finishes and verifies every artifact before pushing, then pushes the common protocol repository before both parents and creates the two GitHub releases. Before any remote changes, an authenticated [Codex CLI](https://developers.openai.com/codex/cli/) turns the commits since each repository's previous reachable `v*` tag into a concise English `## What's New` release body. Codex receives only commit subjects, bodies, and changed-file statistics. It runs non-interactively in a read-only sandbox with an ephemeral session and an isolated temporary working directory; the script uses the current `-C`/`--cd` option for that directory (there is no `-d` directory option in the current CLI). Re-running `publish` updates the existing release notes as well as its assets. Set `CODEX_BIN` if `codex` is not on `PATH` under that name.
+
+Run with `--bootstrap` once to install the Homebrew dependencies and the official universal Qt SDK. A `.cer` file alone cannot sign code; the Developer ID certificate and its private key must be present as a valid identity in Keychain. See `scripts/release-forks.sh --help` for unsigned test builds and other options.
 
 ### Windows Build Requirements
 * Qt 6.7 SDK or later (earlier versions may work but are not officially supported)
