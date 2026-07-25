@@ -318,14 +318,41 @@ github_release() {
   fi
 }
 
+require_push_remote() {
+  local repo="$1" expected="$2" actual
+  actual="$(git -C "${repo}" remote get-url --push origin)"
+  [[ "${actual%.git}" == "${expected%.git}" ]] ||
+    die "refusing to publish ${repo}: origin is ${actual}, expected ${expected}"
+}
+
+push_common() {
+  local common="$1" remote current
+  remote="$(git -C "${MOONLIGHT_DIR}" config -f .gitmodules \
+    --get submodule.moonlight-common-c/moonlight-common-c.url)"
+  [[ "${remote%.git}" == "https://github.com/fxgl/moonlight-common-c" ]] ||
+    die "refusing to publish moonlight-common-c to unexpected remote: ${remote}"
+
+  current="$(git -C "${common}" rev-parse HEAD)"
+  git -C "${common}" fetch "${remote}" master
+  if git -C "${common}" merge-base --is-ancestor "${current}" FETCH_HEAD; then
+    log "moonlight-common-c fork already contains ${current}"
+  elif git -C "${common}" merge-base --is-ancestor FETCH_HEAD "${current}"; then
+    git -C "${common}" push "${remote}" HEAD:refs/heads/master
+  else
+    die "moonlight-common-c fork master has diverged from ${current}"
+  fi
+}
+
 publish_all() {
   log "Pushing coordinated repositories"
   local common="${MOONLIGHT_DIR}/moonlight-common-c/moonlight-common-c"
   local mb sb mt="v${MOONLIGHT_VERSION}" st="v${SUNSHINE_VERSION}"
+  require_push_remote "${MOONLIGHT_DIR}" https://github.com/fxgl/moonlight-qt
+  require_push_remote "${SUNSHINE_DIR}" https://github.com/fxgl/Sunshine
   mb="$(git -C "${MOONLIGHT_DIR}" branch --show-current)"
   sb="$(git -C "${SUNSHINE_DIR}" branch --show-current)"
   [[ -n "${mb}" && -n "${sb}" ]] || die "parent repositories must be on branches"
-  git -C "${common}" push origin HEAD:refs/heads/master
+  push_common "${common}"
   git -C "${MOONLIGHT_DIR}" push origin "HEAD:refs/heads/${mb}"
   git -C "${SUNSHINE_DIR}" push origin "HEAD:refs/heads/${sb}"
   ensure_tag "${MOONLIGHT_DIR}" "${mt}" "$(git -C "${MOONLIGHT_DIR}" rev-parse HEAD)"
