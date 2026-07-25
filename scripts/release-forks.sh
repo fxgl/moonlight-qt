@@ -138,8 +138,8 @@ check_submodules() {
 }
 
 preflight() {
-  [[ -d "${MOONLIGHT_DIR}/.git" ]] || die "Moonlight checkout not found"
-  [[ -d "${SUNSHINE_DIR}/.git" ]] || die "Sunshine checkout not found: ${SUNSHINE_DIR}"
+  [[ -e "${MOONLIGHT_DIR}/.git" ]] || die "Moonlight checkout not found"
+  [[ -e "${SUNSHINE_DIR}/.git" ]] || die "Sunshine checkout not found: ${SUNSHINE_DIR}"
   validate_version "Moonlight version" "${MOONLIGHT_VERSION}"
   validate_version "Sunshine version" "${SUNSHINE_VERSION}"
   for cmd in git python3 cmake cpack create-dmg codesign security lipo hdiutil ditto shasum; do
@@ -168,7 +168,7 @@ prepare_moonlight_version() {
   local file="${MOONLIGHT_DIR}/app/version.txt"
   local current
   current="$(<"${file}")"
-  [[ "${current}" != "${MOONLIGHT_VERSION}" ]] || return
+  [[ "${current}" != "${MOONLIGHT_VERSION}" ]] || return 0
   log "Updating Moonlight version ${current} -> ${MOONLIGHT_VERSION}"
   printf '%s\n' "${MOONLIGHT_VERSION}" >"${file}"
   git -C "${MOONLIGHT_DIR}" add app/version.txt
@@ -225,13 +225,13 @@ build_moonlight() {
   local dsym="${out}/Moonlight-${MOONLIGHT_VERSION}.dsym"
   [[ ! -d "${dsym}" ]] || ditto -c -k --sequesterRsrc --keepParent \
     "${dsym}" "${out}/Moonlight-${MOONLIGHT_VERSION}-dSYM.zip"
-  shasum -a 256 "${dmg}" >"${dmg}.sha256"
+  LC_ALL=C shasum -a 256 "${dmg}" >"${dmg}.sha256"
 }
 
 verify_dmg_app() {
   local dmg="$1" app_name="$2" assess="${3:-false}" mount_dir rc=0
   mount_dir="$(mktemp -d)"
-  hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${dmg}" >/dev/null
+  printf 'Y\n' | hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${dmg}" >/dev/null
   codesign --verify --deep --strict --verbose=2 "${mount_dir}/${app_name}.app" || rc=$?
   if [[ "${assess}" == true ]]; then
     spctl --assess --type execute -vv "${mount_dir}/${app_name}.app" || rc=$?
@@ -239,6 +239,19 @@ verify_dmg_app() {
   hdiutil detach "${mount_dir}" >/dev/null || rc=$?
   rmdir "${mount_dir}" || true
   return "${rc}"
+}
+
+submit_notarization() {
+  local artifact="$1" attempt
+  for attempt in 1 2 3; do
+    if xcrun notarytool submit "${artifact}" --keychain-profile "${NOTARY_PROFILE}" \
+      --wait --timeout 15m; then
+      return 0
+    fi
+    [[ "${attempt}" -lt 3 ]] || die "notary submission failed after 3 attempts: ${artifact}"
+    log "Notary submission attempt ${attempt} failed; retrying"
+    sleep "$((attempt * 5))"
+  done
 }
 
 build_sunshine() {
@@ -275,13 +288,12 @@ build_sunshine() {
   cp "${source}" "${dmg}"
   [[ "${UNSIGNED}" == true ]] || verify_dmg_app "${dmg}" Sunshine false
   if [[ "${SKIP_NOTARIZATION}" == false ]]; then
-    xcrun notarytool submit "${dmg}" --keychain-profile "${NOTARY_PROFILE}" \
-      --wait --timeout 15m
+    submit_notarization "${dmg}"
     xcrun stapler staple -v "${dmg}"
     xcrun stapler validate "${dmg}"
     verify_dmg_app "${dmg}" Sunshine true
   fi
-  shasum -a 256 "${dmg}" >"${dmg}.sha256"
+  LC_ALL=C shasum -a 256 "${dmg}" >"${dmg}.sha256"
 }
 
 ensure_tag() {
@@ -306,14 +318,41 @@ github_release() {
   fi
 }
 
+require_push_remote() {
+  local repo="$1" expected="$2" actual
+  actual="$(git -C "${repo}" remote get-url --push origin)"
+  [[ "${actual%.git}" == "${expected%.git}" ]] ||
+    die "refusing to publish ${repo}: origin is ${actual}, expected ${expected}"
+}
+
+push_common() {
+  local common="$1" remote current
+  remote="$(git -C "${MOONLIGHT_DIR}" config -f .gitmodules \
+    --get submodule.moonlight-common-c/moonlight-common-c.url)"
+  [[ "${remote%.git}" == "https://github.com/fxgl/moonlight-common-c" ]] ||
+    die "refusing to publish moonlight-common-c to unexpected remote: ${remote}"
+
+  current="$(git -C "${common}" rev-parse HEAD)"
+  git -C "${common}" fetch "${remote}" master
+  if git -C "${common}" merge-base --is-ancestor "${current}" FETCH_HEAD; then
+    log "moonlight-common-c fork already contains ${current}"
+  elif git -C "${common}" merge-base --is-ancestor FETCH_HEAD "${current}"; then
+    git -C "${common}" push "${remote}" HEAD:refs/heads/master
+  else
+    die "moonlight-common-c fork master has diverged from ${current}"
+  fi
+}
+
 publish_all() {
   log "Pushing coordinated repositories"
   local common="${MOONLIGHT_DIR}/moonlight-common-c/moonlight-common-c"
   local mb sb mt="v${MOONLIGHT_VERSION}" st="v${SUNSHINE_VERSION}"
+  require_push_remote "${MOONLIGHT_DIR}" https://github.com/fxgl/moonlight-qt
+  require_push_remote "${SUNSHINE_DIR}" https://github.com/fxgl/Sunshine
   mb="$(git -C "${MOONLIGHT_DIR}" branch --show-current)"
   sb="$(git -C "${SUNSHINE_DIR}" branch --show-current)"
   [[ -n "${mb}" && -n "${sb}" ]] || die "parent repositories must be on branches"
-  git -C "${common}" push origin HEAD:refs/heads/master
+  push_common "${common}"
   git -C "${MOONLIGHT_DIR}" push origin "HEAD:refs/heads/${mb}"
   git -C "${SUNSHINE_DIR}" push origin "HEAD:refs/heads/${sb}"
   ensure_tag "${MOONLIGHT_DIR}" "${mt}" "$(git -C "${MOONLIGHT_DIR}" rev-parse HEAD)"
