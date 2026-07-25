@@ -1878,9 +1878,37 @@ void Session::refreshStreamMonitor(bool force)
     const auto* stats = LiGetRTPVideoStats();
     if (stats) {
         m_StreamMonitorModel.recordCounters({stats->receivedBytes,
-                                             stats->packetCountReceived,
                                              stats->packetCountVideo,
-                                             stats->packetCountFec}, now);
+                                             stats->packetCountFecRecovered}, now);
+    }
+
+    uint32_t rttMs;
+    uint32_t jitterMs;
+    if (LiGetEstimatedRttInfo(&rttMs, &jitterMs)) {
+        m_StreamMonitorModel.setNetworkLatency(rttMs, jitterMs);
+    }
+    else {
+        m_StreamMonitorModel.setNetworkLatency(0, 0);
+    }
+
+    VIDEO_STATS videoStats {};
+    if (SDL_TryLockMutex(m_DecoderLock) == 0) {
+        const bool hasVideoStats = m_VideoDecoder && m_VideoDecoder->getVideoStats(videoStats);
+        SDL_UnlockMutex(m_DecoderLock);
+        if (hasVideoStats) {
+            m_StreamMonitorModel.recordPerformance({videoStats.measurementDurationUs,
+                                                    videoStats.receivedFrames,
+                                                    videoStats.decodedFrames,
+                                                    videoStats.renderedFrames,
+                                                    videoStats.totalFrames,
+                                                    videoStats.networkDroppedFrames,
+                                                    videoStats.pacerDroppedFrames,
+                                                    videoStats.framesWithHostProcessingLatency,
+                                                    videoStats.totalHostProcessingLatency,
+                                                    videoStats.totalDecodeTimeUs,
+                                                    videoStats.totalPacerTimeUs,
+                                                    videoStats.totalRenderTimeUs});
+        }
     }
     {
         std::lock_guard<std::mutex> lock(m_AdaptiveQualityMutex);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <QMutex>
 #include <QQueue>
 #include <set>
 
@@ -29,6 +30,7 @@ public:
     virtual void renderFrameOnMainThread() override;
     virtual void setHdrMode(bool enabled) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) override;
+    virtual bool getVideoStats(VIDEO_STATS& stats) override;
 
     virtual IFFmpegRenderer* getBackendRenderer();
 
@@ -117,6 +119,8 @@ private:
     VIDEO_STATS m_ActiveWndVideoStats;
     VIDEO_STATS m_LastWndVideoStats;
     VIDEO_STATS m_GlobalVideoStats;
+    VIDEO_STATS m_LastMonitorVideoStats;
+    QMutex m_MonitorStatsLock;
     std::set<IFFmpegRenderer::RendererType> m_FailedRenderers;
 
     int m_FramesIn;
