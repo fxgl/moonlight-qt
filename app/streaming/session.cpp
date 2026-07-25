@@ -28,6 +28,7 @@
 #define SDL_CODE_GAMECONTROLLER_SET_MOTION_EVENT_STATE 103
 #define SDL_CODE_GAMECONTROLLER_SET_CONTROLLER_LED 104
 #define SDL_CODE_GAMECONTROLLER_SET_ADAPTIVE_TRIGGERS 105
+#define SDL_CODE_SET_CLIPBOARD_TEXT 106
 
 #include <openssl/rand.h>
 
@@ -38,6 +39,7 @@
 #include <QPainter>
 #include <QImage>
 #include <QGuiApplication>
+#include <QClipboard>
 #include <QCursor>
 #include <QScreen>
 
@@ -60,7 +62,8 @@ CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
     Session::clRumbleTriggers,
     Session::clSetMotionEventState,
     Session::clSetControllerLED,
-    Session::clSetAdaptiveTriggers
+    Session::clSetAdaptiveTriggers,
+    Session::clSetClipboardText
 };
 
 Session* Session::s_ActiveSession;
@@ -272,6 +275,23 @@ void Session::clSetAdaptiveTriggers(uint16_t controllerNumber, uint8_t eventFlag
 
     setControllerLEDEvent.user.data2 = (void *) state;
     SDL_PushEvent(&setControllerLEDEvent);
+}
+
+void Session::clSetClipboardText(const char* text, unsigned int length)
+{
+    Session* session = s_ActiveSession;
+    if (!session || !session->m_Preferences->clipboardSync || length > 60 * 1024) {
+        return;
+    }
+
+    auto* utf8Text = new QByteArray(text, length);
+    SDL_Event clipboardEvent = {};
+    clipboardEvent.type = SDL_USEREVENT;
+    clipboardEvent.user.code = SDL_CODE_SET_CLIPBOARD_TEXT;
+    clipboardEvent.user.data1 = utf8Text;
+    if (SDL_PushEvent(&clipboardEvent) != 1) {
+        delete utf8Text;
+    }
 }
 
 
@@ -586,6 +606,8 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_AudioSampleCount(0),
       m_DropAudioEndTime(0)
 {
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged,
+            this, &Session::syncClipboardToHost);
 }
 
 Session::~Session()
@@ -1703,6 +1725,7 @@ bool Session::startConnectionAsync()
                                                                          false);
     }
 
+    LiSetClipboardSyncEnabled(m_Preferences->clipboardSync);
     int err = LiStartConnection(&hostInfo, &m_StreamConfig, &k_ConnCallbacks,
                                 &m_VideoCallbacks, &m_AudioCallbacks,
                                 NULL, 0, NULL, 0);
@@ -1714,6 +1737,27 @@ bool Session::startConnectionAsync()
 
     emit connectionStarted();
     return true;
+}
+
+void Session::syncClipboardToHost()
+{
+    if (s_ActiveSession != this || !m_Preferences->clipboardSync ||
+            !(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_SYNC)) {
+        return;
+    }
+
+    const QByteArray utf8Text = QGuiApplication::clipboard()->text().toUtf8();
+    if (utf8Text == m_LastRemoteClipboardText) {
+        m_LastRemoteClipboardText.clear();
+        return;
+    }
+    if (utf8Text.size() > 60 * 1024) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Clipboard text exceeds the 60 KiB synchronization limit");
+        return;
+    }
+
+    LiSendClipboardTextEvent(utf8Text.constData(), static_cast<unsigned int>(utf8Text.size()));
 }
 
 void Session::flushWindowEvents()
@@ -2036,6 +2080,18 @@ void Session::exec()
                 m_InputHandler->setAdaptiveTriggers((uint16_t)(uintptr_t)event.user.data1,
                                                     (DualSenseOutputReport *)event.user.data2);
                 break;
+            case SDL_CODE_SET_CLIPBOARD_TEXT: {
+                auto* utf8Text = static_cast<QByteArray*>(event.user.data1);
+                if (s_ActiveSession == this && m_Preferences->clipboardSync) {
+                    auto* clipboard = QGuiApplication::clipboard();
+                    if (clipboard->text().toUtf8() != *utf8Text) {
+                        m_LastRemoteClipboardText = *utf8Text;
+                        clipboard->setText(QString::fromUtf8(*utf8Text));
+                    }
+                }
+                delete utf8Text;
+                break;
+            }
             default:
                 SDL_assert(false);
             }
@@ -2249,6 +2305,10 @@ void Session::exec()
         case SDL_KEYDOWN:
             presence.runCallbacks();
             m_InputHandler->handleKeyEvent(&event.key);
+            break;
+        case SDL_TEXTINPUT:
+            presence.runCallbacks();
+            m_InputHandler->handleTextInputEvent(&event.text);
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:

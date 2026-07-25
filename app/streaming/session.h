@@ -2,6 +2,7 @@
 
 #include <QSemaphore>
 #include <QQuickWindow>
+#include <QByteArray>
 
 #include <Limelight.h>
 #include <opus_multistream.h>
@@ -171,6 +172,8 @@ private:
 
     void updateOptimalWindowDisplayMode();
 
+    void syncClipboardToHost();
+
     enum class DecoderAvailability {
         None,
         Software,
@@ -222,6 +225,9 @@ private:
 
     static
     void clSetAdaptiveTriggers(uint16_t controllerNumber, uint8_t eventFlags, uint8_t typeLeft, uint8_t typeRight, uint8_t *left, uint8_t *right);
+
+    static
+    void clSetClipboardText(const char* text, unsigned int length);
 
     static
     int arInit(int audioConfiguration,
@@ -281,6 +287,7 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
+    QByteArray m_LastRemoteClipboardText;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

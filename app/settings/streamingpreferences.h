@@ -155,6 +155,9 @@ public:
     Q_PROPERTY(bool reverseScrollDirection MEMBER reverseScrollDirection NOTIFY reverseScrollDirectionChanged)
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
+    Q_PROPERTY(bool directClipboardPaste MEMBER directClipboardPaste NOTIFY directClipboardPasteChanged)
+    Q_PROPERTY(bool clipboardSync MEMBER clipboardSync NOTIFY clipboardSyncChanged)
+    Q_PROPERTY(bool clientKeyboardLayout MEMBER clientKeyboardLayout NOTIFY clientKeyboardLayoutChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
 
@@ -188,6 +191,9 @@ public:
     bool reverseScrollDirection;
     bool swapFaceButtons;
     bool keepAwake;
+    bool directClipboardPaste;
+    bool clipboardSync;
+    bool clientKeyboardLayout;
     int packetSize;
     AudioConfig audioConfig;
     VideoCodecConfig videoCodecConfig;
@@ -236,6 +242,9 @@ signals:
     void swapFaceButtonsChanged();
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
+    void directClipboardPasteChanged();
+    void clipboardSyncChanged();
+    void clientKeyboardLayoutChanged();
     void languageChanged();
     void rendererSelectionChanged();
 
@@ -246,4 +255,3 @@ private:
 
     QQmlEngine* m_QmlEngine;
 };
-

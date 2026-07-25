@@ -15,6 +15,9 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
       m_SwapMouseButtons(prefs.swapMouseButtons),
       m_ReverseScrollDirection(prefs.reverseScrollDirection),
       m_SwapFaceButtons(prefs.swapFaceButtons),
+      m_DirectClipboardPaste(prefs.directClipboardPaste),
+      m_ClientKeyboardLayout(prefs.clientKeyboardLayout),
+      m_ClipboardSync(prefs.clipboardSync),
       m_MouseWasInVideoRegion(false),
       m_PendingMouseButtonsAllUpOnVideoRegionLeave(false),
       m_PointerRegionLockActive(false),
@@ -205,6 +208,10 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
 
 SdlInputHandler::~SdlInputHandler()
 {
+    if (m_ClientKeyboardLayout) {
+        SDL_StopTextInput();
+    }
+
     for (int i = 0; i < MAX_GAMEPADS; i++) {
         if (m_GamepadState[i].mouseEmulationTimer != 0) {
             Session::get()->notifyMouseEmulationMode(false);
@@ -255,6 +262,12 @@ SdlInputHandler::~SdlInputHandler()
 void SdlInputHandler::setWindow(SDL_Window *window)
 {
     m_Window = window;
+    if (m_ClientKeyboardLayout) {
+        SDL_StartTextInput();
+    }
+    if (m_ClipboardSync && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) {
+        LiSendClipboardFocusEvent(true);
+    }
 }
 
 void SdlInputHandler::raiseAllKeys()
@@ -296,6 +309,10 @@ void SdlInputHandler::notifyMouseLeave()
 
 void SdlInputHandler::notifyFocusLost()
 {
+    if (m_ClipboardSync) {
+        LiSendClipboardFocusEvent(false);
+    }
+
     // Release mouse cursor when another window is activated (e.g. by using ALT+TAB).
     // This lets user to interact with our window's title bar and with the buttons in it.
     // Doing this while the window is full-screen breaks the transition out of FS
@@ -311,6 +328,9 @@ void SdlInputHandler::notifyFocusLost()
 
 void SdlInputHandler::notifyFocusGained()
 {
+    if (m_ClipboardSync) {
+        LiSendClipboardFocusEvent(true);
+    }
 }
 
 bool SdlInputHandler::isCaptureActive()

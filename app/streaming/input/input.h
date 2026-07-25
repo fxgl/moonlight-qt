@@ -92,6 +92,8 @@ public:
 
     void handleKeyEvent(SDL_KeyboardEvent* event);
 
+    void handleTextInputEvent(SDL_TextInputEvent* event);
+
     void handleMouseButtonEvent(SDL_MouseButtonEvent* event);
 
     void handleMouseMotionEvent(SDL_MouseMotionEvent* event);
@@ -209,6 +211,9 @@ private:
     bool m_SwapMouseButtons;
     bool m_ReverseScrollDirection;
     bool m_SwapFaceButtons;
+    bool m_DirectClipboardPaste;
+    bool m_ClientKeyboardLayout;
+    bool m_ClipboardSync;
 
     bool m_MouseWasInVideoRegion;
     bool m_PendingMouseButtonsAllUpOnVideoRegionLeave;
@@ -218,6 +223,7 @@ private:
     int m_GamepadMask;
     GamepadState m_GamepadState[MAX_GAMEPADS];
     QSet<short> m_KeysDown;
+    QSet<SDL_Scancode> m_TextInputKeysDown;
     bool m_FakeMouseCaptureActive;
     bool m_KeyboardCaptureActive;
     QString m_OldIgnoreDevices;

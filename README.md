@@ -1,5 +1,22 @@
 # Moonlight PC
 
+> [!IMPORTANT]
+> This is a remote-desktop-focused fork of Moonlight PC. It is designed to be used with
+> [fxgl/Sunshine](https://github.com/fxgl/Sunshine) and the bundled
+> [fxgl/moonlight-common-c](https://github.com/fxgl/moonlight-common-c) protocol fork.
+
+## Why this fork exists
+
+The upstream Moonlight/Sunshine pair is optimized primarily for game streaming. This fork adds the desktop-integration behavior needed to move comfortably between a local Mac or PC and a remote computer:
+
+- **Bidirectional UTF-8 clipboard synchronization.** Local clipboard changes are sent to the Sunshine host. In the other direction, Sunshine snapshots its clipboard when Moonlight gains focus and returns it when Moonlight loses focus only if the host clipboard changed during that focus interval.
+- **No clipboard overwrite on connection.** Moonlight does not publish stale local clipboard contents just because a stream started.
+- **Loop and origin suppression.** Clipboard text received from Sunshine is not echoed back, and client-originated writes are not mistaken for host-side changes.
+- **Direct standard paste.** `Cmd+V` on macOS and `Ctrl+V` elsewhere can send clipboard text directly to the focused remote application as Unicode.
+- **Client keyboard layout mode.** Printable text can be composed using the client's active keyboard layout and sent as Unicode, while shortcuts and non-text keys continue to use raw key events.
+
+Clipboard synchronization is opt-in, text-only, and limited to 60 KiB per update. Both endpoints must use the matching fxgl forks for the full feature set. The protocol additions live in the pinned `moonlight-common-c` submodule.
+
 [Moonlight PC](https://moonlight-stream.org) is an open source PC client for NVIDIA GameStream and [Sunshine](https://github.com/LizardByte/Sunshine).
 
 Moonlight also has mobile versions for [Android](https://github.com/moonlight-stream/moonlight-android) and [iOS](https://github.com/moonlight-stream/moonlight-ios).

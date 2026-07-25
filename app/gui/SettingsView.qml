@@ -1347,6 +1347,57 @@ Flickable {
                                   qsTr("NOTE: Due to a bug in GeForce Experience, this option may not work properly if your host PC has multiple monitors.")
                 }
 
+                CheckBox {
+                    id: clipboardSyncCheck
+                    hoverEnabled: true
+                    width: parent.width
+                    text: qsTr("Synchronize clipboard text with the host")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.clipboardSync
+                    onCheckedChanged: {
+                        StreamingPreferences.clipboardSync = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 10000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Sends locally copied UTF-8 text to the host. Text copied on the host is transferred back only when the Moonlight window loses focus, and only if the host clipboard changed while it was focused. Images and files are not transferred.")
+                }
+
+                CheckBox {
+                    id: directClipboardPasteCheck
+                    hoverEnabled: true
+                    width: parent.width
+                    text: qsTr("Paste the client's clipboard with the standard shortcut")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.directClipboardPaste
+                    onCheckedChanged: {
+                        StreamingPreferences.directClipboardPaste = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 10000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Sends clipboard text directly to the host when pressing Cmd+V on macOS or Ctrl+V on other platforms. This also avoids text being affected by a different keyboard layout on the host.")
+                }
+
+                CheckBox {
+                    id: clientKeyboardLayoutCheck
+                    hoverEnabled: true
+                    width: parent.width
+                    text: qsTr("Use the client's keyboard layout for text input")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.clientKeyboardLayout
+                    onCheckedChanged: {
+                        StreamingPreferences.clientKeyboardLayout = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 10000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Sends printable characters as Unicode text composed by the client. Enable this for remote desktop use when the client and host keyboard layouts differ. Disable it for games that need direct letter or number key presses.")
+                }
+
                 Row {
                     spacing: 5
                     width: parent.width
