@@ -175,6 +175,25 @@ prepare_moonlight_version() {
   git -C "${MOONLIGHT_DIR}" commit -m "chore: release v${MOONLIGHT_VERSION}"
 }
 
+check_tag_available() {
+  local repo="$1" tag="$2" current existing remote
+  current="$(git -C "${repo}" rev-parse HEAD)"
+  if git -C "${repo}" rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+    existing="$(git -C "${repo}" rev-list -n 1 "${tag}")"
+    [[ "${existing}" == "${current}" ]] ||
+      die "tag ${tag} already points to ${existing}, not current commit ${current}"
+    return
+  fi
+
+  remote="$(git -C "${repo}" ls-remote --tags origin "refs/tags/${tag}" "refs/tags/${tag}^{}")"
+  [[ -z "${remote}" ]] || die "tag ${tag} already exists on origin; fetch it before retrying"
+}
+
+check_publish_tags() {
+  check_tag_available "${MOONLIGHT_DIR}" "v${MOONLIGHT_VERSION}"
+  check_tag_available "${SUNSHINE_DIR}" "v${SUNSHINE_VERSION}"
+}
+
 build_moonlight() {
   log "Building Moonlight ${MOONLIGHT_VERSION} (universal macOS)"
   local signing="" profile=""
@@ -348,6 +367,7 @@ main() {
   [[ "${BOOTSTRAP}" == false ]] || bootstrap_dependencies
   preflight
   [[ "${COMMAND}" != publish ]] || prepare_moonlight_version
+  [[ "${COMMAND}" != publish ]] || check_publish_tags
   build_moonlight
   build_sunshine
   [[ "${COMMAND}" != publish ]] || publish_all
