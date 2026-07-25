@@ -106,7 +106,13 @@ fi
 
 if [ "$NOTARY_KEYCHAIN_PROFILE" != "" ]; then
   echo Uploading to App Notary service
-  xcrun notarytool submit --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" --wait "$INSTALLER_FOLDER/Moonlight.dmg" || fail "Notary submission failed"
+  NOTARY_ATTEMPT=1
+  until xcrun notarytool submit --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" --wait "$INSTALLER_FOLDER/Moonlight.dmg"; do
+    [ "$NOTARY_ATTEMPT" -lt 3 ] || fail "Notary submission failed after 3 attempts"
+    echo "Notary submission attempt $NOTARY_ATTEMPT failed; retrying"
+    sleep $((NOTARY_ATTEMPT * 5))
+    NOTARY_ATTEMPT=$((NOTARY_ATTEMPT + 1))
+  done
 
   echo Stapling notary ticket to DMG
   xcrun stapler staple -v "$INSTALLER_FOLDER/Moonlight.dmg" || fail "Notary ticket stapling failed!"

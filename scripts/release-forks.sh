@@ -241,6 +241,19 @@ verify_dmg_app() {
   return "${rc}"
 }
 
+submit_notarization() {
+  local artifact="$1" attempt
+  for attempt in 1 2 3; do
+    if xcrun notarytool submit "${artifact}" --keychain-profile "${NOTARY_PROFILE}" \
+      --wait --timeout 15m; then
+      return 0
+    fi
+    [[ "${attempt}" -lt 3 ]] || die "notary submission failed after 3 attempts: ${artifact}"
+    log "Notary submission attempt ${attempt} failed; retrying"
+    sleep "$((attempt * 5))"
+  done
+}
+
 build_sunshine() {
   log "Building Sunshine ${SUNSHINE_VERSION} ($(uname -m) macOS)"
   local build="${SUNSHINE_DIR}/cmake-build-release-fxgl"
@@ -275,8 +288,7 @@ build_sunshine() {
   cp "${source}" "${dmg}"
   [[ "${UNSIGNED}" == true ]] || verify_dmg_app "${dmg}" Sunshine false
   if [[ "${SKIP_NOTARIZATION}" == false ]]; then
-    xcrun notarytool submit "${dmg}" --keychain-profile "${NOTARY_PROFILE}" \
-      --wait --timeout 15m
+    submit_notarization "${dmg}"
     xcrun stapler staple -v "${dmg}"
     xcrun stapler validate "${dmg}"
     verify_dmg_app "${dmg}" Sunshine true
