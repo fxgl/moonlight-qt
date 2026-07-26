@@ -2545,6 +2545,9 @@ void Session::exec()
             presence.runCallbacks();
             m_InputHandler->handleKeyEvent(&event.key);
             break;
+        case SDL_KEYMAPCHANGED:
+            m_InputHandler->notifyKeyboardLayoutChanged();
+            break;
         case SDL_TEXTINPUT:
             presence.runCallbacks();
             m_InputHandler->handleTextInputEvent(&event.text);

@@ -208,10 +208,6 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
 
 SdlInputHandler::~SdlInputHandler()
 {
-    if (m_ClientKeyboardLayout) {
-        SDL_StopTextInput();
-    }
-
     for (int i = 0; i < MAX_GAMEPADS; i++) {
         if (m_GamepadState[i].mouseEmulationTimer != 0) {
             Session::get()->notifyMouseEmulationMode(false);
@@ -262,8 +258,8 @@ SdlInputHandler::~SdlInputHandler()
 void SdlInputHandler::setWindow(SDL_Window *window)
 {
     m_Window = window;
-    if (m_ClientKeyboardLayout) {
-        SDL_StartTextInput();
+    if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) {
+        syncKeyboardLayout(true);
     }
     if (m_ClipboardSync && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) {
         LiSendClipboardFocusEvent(true);
@@ -328,8 +324,45 @@ void SdlInputHandler::notifyFocusLost()
 
 void SdlInputHandler::notifyFocusGained()
 {
+    syncKeyboardLayout(true);
     if (m_ClipboardSync) {
         LiSendClipboardFocusEvent(true);
+    }
+}
+
+void SdlInputHandler::notifyKeyboardLayoutChanged()
+{
+    if (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS) {
+        syncKeyboardLayout(false);
+    }
+}
+
+void SdlInputHandler::syncKeyboardLayout(bool force)
+{
+    if (!m_ClientKeyboardLayout || !(LiGetHostFeatureFlags() & LI_FF_KEYBOARD_LAYOUT_SYNC)) {
+        return;
+    }
+
+    const auto currentLayout = KeyboardLayout::current();
+    if (!KeyboardLayout::needsSync(currentLayout, m_LastKeyboardLayout, force)) {
+        return;
+    }
+
+    const int err = LiSendKeyboardLayoutEvent(
+            currentLayout.platform,
+            currentLayout.language.constData(),
+            static_cast<unsigned int>(currentLayout.language.size()),
+            currentLayout.layoutId.constData(),
+            static_cast<unsigned int>(currentLayout.layoutId.size()));
+    if (err == 0) {
+        m_LastKeyboardLayout = currentLayout;
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Synchronized keyboard layout: language=%s id=%s",
+                    currentLayout.language.constData(), currentLayout.layoutId.constData());
+    }
+    else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Failed to synchronize keyboard layout: %d", err);
     }
 }
 

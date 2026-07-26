@@ -6,36 +6,6 @@
 #define VK_0 0x30
 #define VK_A 0x41
 
-namespace {
-bool isTextProducingKey(SDL_Scancode scancode)
-{
-    if ((scancode >= SDL_SCANCODE_A && scancode <= SDL_SCANCODE_0) ||
-            (scancode >= SDL_SCANCODE_KP_DIVIDE && scancode <= SDL_SCANCODE_KP_PLUS) ||
-            (scancode >= SDL_SCANCODE_KP_1 && scancode <= SDL_SCANCODE_KP_PERIOD)) {
-        return true;
-    }
-
-    switch (scancode) {
-    case SDL_SCANCODE_SPACE:
-    case SDL_SCANCODE_MINUS:
-    case SDL_SCANCODE_EQUALS:
-    case SDL_SCANCODE_LEFTBRACKET:
-    case SDL_SCANCODE_RIGHTBRACKET:
-    case SDL_SCANCODE_BACKSLASH:
-    case SDL_SCANCODE_NONUSBACKSLASH:
-    case SDL_SCANCODE_SEMICOLON:
-    case SDL_SCANCODE_APOSTROPHE:
-    case SDL_SCANCODE_GRAVE:
-    case SDL_SCANCODE_COMMA:
-    case SDL_SCANCODE_PERIOD:
-    case SDL_SCANCODE_SLASH:
-        return true;
-    default:
-        return false;
-    }
-}
-}
-
 // These are real Windows VK_* codes
 #ifndef VK_F1
 #define VK_F1 0x70
@@ -215,6 +185,10 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         return;
     }
 
+    if (event->state == SDL_PRESSED) {
+        syncKeyboardLayout(false);
+    }
+
     // In remote desktop use, users expect the platform's regular paste shortcut
     // to paste the client's clipboard into the host. Sending the text as Unicode
     // also avoids interpreting it using a different keyboard layout on the host.
@@ -263,19 +237,6 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
                 performSpecialKeyCombo(m_SpecialKeyCombos[i].keyCombo);
                 return;
             }
-        }
-    }
-
-    if (m_ClientKeyboardLayout) {
-        if (event->state == SDL_RELEASED && m_TextInputKeysDown.remove(event->keysym.scancode)) {
-            return;
-        }
-
-        const SDL_Keymod shortcutModifiers = static_cast<SDL_Keymod>(KMOD_CTRL | KMOD_ALT | KMOD_GUI);
-        if (event->state == SDL_PRESSED && !(event->keysym.mod & shortcutModifiers) &&
-                isTextProducingKey(event->keysym.scancode)) {
-            m_TextInputKeysDown.insert(event->keysym.scancode);
-            return;
         }
     }
 
@@ -544,9 +505,5 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
 
 void SdlInputHandler::handleTextInputEvent(SDL_TextInputEvent* event)
 {
-    if (!m_ClientKeyboardLayout || event->text[0] == '\0') {
-        return;
-    }
-
-    LiSendUtf8TextEvent(event->text, static_cast<unsigned int>(strlen(event->text)));
+    Q_UNUSED(event);
 }

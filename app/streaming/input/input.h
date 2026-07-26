@@ -2,6 +2,7 @@
 
 #include "settings/streamingpreferences.h"
 #include "backend/computermanager.h"
+#include "streaming/input/keyboardlayout.h"
 
 #include "SDL_compat.h"
 
@@ -142,6 +143,8 @@ public:
 
     void notifyFocusGained();
 
+    void notifyKeyboardLayoutChanged();
+
     bool isCaptureActive();
 
     bool isSystemKeyCaptureActive();
@@ -190,6 +193,8 @@ private:
 
     void performSpecialKeyCombo(KeyCombo combo);
 
+    void syncKeyboardLayout(bool force);
+
     static
     Uint32 longPressTimerCallback(Uint32 interval, void* param);
 
@@ -223,7 +228,7 @@ private:
     int m_GamepadMask;
     GamepadState m_GamepadState[MAX_GAMEPADS];
     QSet<short> m_KeysDown;
-    QSet<SDL_Scancode> m_TextInputKeysDown;
+    KeyboardLayout::Descriptor m_LastKeyboardLayout;
     bool m_FakeMouseCaptureActive;
     bool m_KeyboardCaptureActive;
     QString m_OldIgnoreDevices;

@@ -155,14 +155,19 @@ win32 {
 win32:!winrt {
     CONFIG += discord-rpc
 }
+win32 {
+    SOURCES += streaming/input/keyboardlayout_win.cpp
+}
 macx {
     !disable-prebuilts {
         LIBS += -lssl.3 -lcrypto.3 -lavcodec.62 -lavutil.60 -lswscale.9 -lopus.0 -lSDL2 -lSDL2_ttf -lplacebo
         CONFIG += discord-rpc libplacebo
     }
 
-    LIBS += -lobjc -framework VideoToolbox -framework AVFoundation -framework CoreVideo -framework CoreGraphics -framework CoreMedia -framework AppKit -framework Metal -framework QuartzCore
+    LIBS += -lobjc -framework VideoToolbox -framework AVFoundation -framework CoreVideo -framework CoreGraphics -framework CoreMedia -framework AppKit -framework Carbon -framework Metal -framework QuartzCore
     CONFIG += ffmpeg
+
+    OBJECTIVE_SOURCES += streaming/input/keyboardlayout_mac.mm
 }
 
 SOURCES += \
@@ -188,6 +193,7 @@ SOURCES += \
     streaming/input/abstouch.cpp \
     streaming/input/gamepad.cpp \
     streaming/input/input.cpp \
+    streaming/input/keyboardlayout.cpp \
     streaming/input/keyboard.cpp \
     streaming/input/mouse.cpp \
     streaming/input/reltouch.cpp \
@@ -232,6 +238,7 @@ HEADERS += \
     streaming/adaptivequalitycontroller.h \
     streaming/streammonitormodel.h \
     streaming/input/input.h \
+    streaming/input/keyboardlayout.h \
     streaming/session.h \
     streaming/audio/renderers/renderer.h \
     streaming/audio/renderers/sdl.h \
