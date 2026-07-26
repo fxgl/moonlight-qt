@@ -1,7 +1,10 @@
 #include <QtTest>
 
+#include <Input.h>
+
 #include "streaming/adaptivequalitycontroller.h"
 #include "streaming/streammonitormodel.h"
+#include "streaming/input/keyboardlayout.h"
 
 class AdaptiveQualityControllerTest : public QObject
 {
@@ -23,6 +26,11 @@ private slots:
     void parsesDisplayList();
     void rejectsMalformedDisplayList();
     void reportsManualControlLimits();
+    void synchronizesKeyboardLayoutOnlyWhenNeeded();
+    void keepsKeyboardLayoutProtocolStable();
+#if defined(Q_OS_DARWIN) || defined(Q_OS_WIN)
+    void detectsNativeKeyboardLayout();
+#endif
 };
 
 static std::vector<AdaptiveQualityController::Tier> qualityTiers()
@@ -239,6 +247,43 @@ void AdaptiveQualityControllerTest::reportsManualControlLimits()
     QVERIFY(controller.canIncrease());
     QVERIFY(!controller.canDecrease());
 }
+
+void AdaptiveQualityControllerTest::synchronizesKeyboardLayoutOnlyWhenNeeded()
+{
+    const KeyboardLayout::Descriptor russian {
+        LI_KEYBOARD_LAYOUT_PLATFORM_MACOS, "ru", "com.apple.keylayout.Russian"
+    };
+    const KeyboardLayout::Descriptor russianPc {
+        LI_KEYBOARD_LAYOUT_PLATFORM_MACOS, "ru", "com.apple.keylayout.RussianWin"
+    };
+
+    QVERIFY(!KeyboardLayout::needsSync({}, {}, true));
+    QVERIFY(KeyboardLayout::needsSync(russian, {}, false));
+    QVERIFY(!KeyboardLayout::needsSync(russian, russian, false));
+    QVERIFY(KeyboardLayout::needsSync(russian, russian, true));
+    QVERIFY(KeyboardLayout::needsSync(russianPc, russian, false));
+}
+
+void AdaptiveQualityControllerTest::keepsKeyboardLayoutProtocolStable()
+{
+    QCOMPARE(SS_KEYBOARD_LAYOUT_EVENT_MAGIC, 0x5500000A);
+    QCOMPARE(offsetof(SS_KEYBOARD_LAYOUT_PACKET, data), std::size_t(12));
+    QCOMPARE(LI_FF_KEYBOARD_LAYOUT_SYNC, 0x20);
+    QCOMPARE(LI_KEYBOARD_LAYOUT_PLATFORM_WINDOWS, 1);
+    QCOMPARE(LI_KEYBOARD_LAYOUT_PLATFORM_MACOS, 2);
+}
+
+#if defined(Q_OS_DARWIN) || defined(Q_OS_WIN)
+void AdaptiveQualityControllerTest::detectsNativeKeyboardLayout()
+{
+    const auto layout = KeyboardLayout::current();
+    QVERIFY(layout.isValid());
+    QVERIFY(!layout.language.isEmpty());
+    QVERIFY(!layout.layoutId.isEmpty());
+    QVERIFY(layout.language.size() <= LI_KEYBOARD_LAYOUT_LANGUAGE_MAX_COUNT);
+    QVERIFY(layout.layoutId.size() <= LI_KEYBOARD_LAYOUT_ID_MAX_COUNT);
+}
+#endif
 
 QTEST_APPLESS_MAIN(AdaptiveQualityControllerTest)
 
