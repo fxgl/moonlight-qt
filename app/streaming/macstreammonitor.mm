@@ -81,9 +81,14 @@
     NSTextField* countdownLabel;
     NSButton* increaseButton;
     NSButton* decreaseButton;
+    NSButton* previousDisplayButton;
+    NSButton* nextDisplayButton;
+    NSButton* refreshDisplayButton;
     NSPopUpButton* displayPopup;
+    NSTextField* displayStatusLabel;
     MLStreamGraphView* graph;
     NSMenuItem* rootMenuItem;
+    NSInteger requestedDisplayIndex;
 }
 - (instancetype)initWithActions:(MacStreamMonitor::Actions)callbacks;
 - (void)showWindow:(id)sender;
@@ -91,6 +96,9 @@
 - (void)decreaseQuality:(id)sender;
 - (void)refreshDisplays:(id)sender;
 - (void)switchDisplay:(id)sender;
+- (void)previousDisplay:(id)sender;
+- (void)nextDisplay:(id)sender;
+- (void)requestDisplayIndex:(NSInteger)index;
 - (void)update:(const StreamMonitorModel::Snapshot&)snapshot;
 @end
 
@@ -122,7 +130,8 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     if (!self) return nil;
     actions = std::move(callbacks);
 
-    window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 720, 600)
+    requestedDisplayIndex = -1;
+    window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 720, 650)
                                          styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                                                    NSWindowStyleMaskMiniaturizable
                                            backing:NSBackingStoreBuffered
@@ -132,19 +141,19 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     [window setReleasedWhenClosed:NO];
     NSView* content = [window contentView];
 
-    speedLabel = makeLabel(NSMakeRect(20, 555, 215, 24), 15);
-    bitrateLabel = makeLabel(NSMakeRect(250, 555, 215, 24), 15);
-    resolutionLabel = makeLabel(NSMakeRect(480, 555, 220, 24), 15);
-    lossLabel = makeLabel(NSMakeRect(20, 525, 215, 24), 14);
-    fecLabel = makeLabel(NSMakeRect(250, 525, 215, 24), 14);
-    droppedLabel = makeLabel(NSMakeRect(480, 525, 220, 24), 12);
-    rttLabel = makeLabel(NSMakeRect(20, 495, 215, 24), 14);
-    jitterLabel = makeLabel(NSMakeRect(250, 495, 215, 24), 14);
-    latencyLabel = makeLabel(NSMakeRect(480, 495, 220, 24), 14);
-    fpsLabel = makeLabel(NSMakeRect(20, 465, 215, 24), 13);
-    hostLatencyLabel = makeLabel(NSMakeRect(250, 465, 215, 24), 13);
-    clientLatencyLabel = makeLabel(NSMakeRect(480, 465, 220, 24), 11);
-    countdownLabel = makeLabel(NSMakeRect(20, 430, 680, 24), 14);
+    speedLabel = makeLabel(NSMakeRect(20, 605, 215, 24), 15);
+    bitrateLabel = makeLabel(NSMakeRect(250, 605, 215, 24), 15);
+    resolutionLabel = makeLabel(NSMakeRect(480, 605, 220, 24), 15);
+    lossLabel = makeLabel(NSMakeRect(20, 575, 215, 24), 14);
+    fecLabel = makeLabel(NSMakeRect(250, 575, 215, 24), 14);
+    droppedLabel = makeLabel(NSMakeRect(480, 575, 220, 24), 12);
+    rttLabel = makeLabel(NSMakeRect(20, 545, 215, 24), 14);
+    jitterLabel = makeLabel(NSMakeRect(250, 545, 215, 24), 14);
+    latencyLabel = makeLabel(NSMakeRect(480, 545, 220, 24), 14);
+    fpsLabel = makeLabel(NSMakeRect(20, 515, 215, 24), 13);
+    hostLatencyLabel = makeLabel(NSMakeRect(250, 515, 215, 24), 13);
+    clientLatencyLabel = makeLabel(NSMakeRect(480, 515, 220, 24), 11);
+    countdownLabel = makeLabel(NSMakeRect(20, 480, 680, 24), 14);
     [content addSubview:speedLabel];
     [content addSubview:bitrateLabel];
     [content addSubview:resolutionLabel];
@@ -159,26 +168,69 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     [content addSubview:clientLatencyLabel];
     [content addSubview:countdownLabel];
 
-    graph = [[MLStreamGraphView alloc] initWithFrame:NSMakeRect(20, 150, 680, 260)];
+    graph = [[MLStreamGraphView alloc] initWithFrame:NSMakeRect(20, 200, 680, 260)];
     [graph setWantsLayer:YES];
     [graph.layer setCornerRadius:6.0];
     [content addSubview:graph];
 
-    NSTextField* legend = makeLabel(NSMakeRect(20, 123, 680, 20), 12);
-    [legend setStringValue:@"Green: throughput     Blue: target bitrate     Red: packet loss"];
+    NSTextField* legend = makeLabel(NSMakeRect(20, 173, 680, 20), 12);
+    NSMutableAttributedString* legendText = [[[NSMutableAttributedString alloc]
+        initWithString:@"● Throughput     ● Target bitrate     ● Packet loss"] autorelease];
+    [legendText addAttribute:NSForegroundColorAttributeName value:[NSColor systemGreenColor] range:NSMakeRange(0, 1)];
+    [legendText addAttribute:NSForegroundColorAttributeName value:[NSColor systemBlueColor] range:NSMakeRange(17, 1)];
+    [legendText addAttribute:NSForegroundColorAttributeName value:[NSColor systemRedColor] range:NSMakeRange(38, 1)];
+    [legend setAttributedStringValue:legendText];
     [content addSubview:legend];
     [legend release];
 
-    decreaseButton = [makeButton(@"− Quality", NSMakeRect(20, 72, 105, 32), self, @selector(decreaseQuality:)) retain];
-    increaseButton = [makeButton(@"+ Quality", NSMakeRect(135, 72, 105, 32), self, @selector(increaseQuality:)) retain];
+    NSTextField* qualityTitle = makeLabel(NSMakeRect(20, 145, 180, 18), 11);
+    [qualityTitle setStringValue:@"STREAM QUALITY"];
+    [qualityTitle setTextColor:[NSColor secondaryLabelColor]];
+    [content addSubview:qualityTitle];
+    [qualityTitle release];
+
+    decreaseButton = [makeButton(@"− Quality", NSMakeRect(485, 132, 105, 32), self, @selector(decreaseQuality:)) retain];
+    increaseButton = [makeButton(@"+ Quality", NSMakeRect(595, 132, 105, 32), self, @selector(increaseQuality:)) retain];
     [content addSubview:decreaseButton];
     [content addSubview:increaseButton];
 
-    displayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(255, 72, 340, 32) pullsDown:NO];
+    NSVisualEffectView* displayCard = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(20, 15, 680, 105)];
+    [displayCard setMaterial:NSVisualEffectMaterialSidebar];
+    [displayCard setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
+    [displayCard setState:NSVisualEffectStateActive];
+    [displayCard setWantsLayer:YES];
+    [displayCard.layer setCornerRadius:10.0];
+    [content addSubview:displayCard];
+
+    NSTextField* displayTitle = makeLabel(NSMakeRect(16, 76, 300, 18), 11);
+    [displayTitle setStringValue:@"REMOTE DISPLAY"];
+    [displayTitle setTextColor:[NSColor secondaryLabelColor]];
+    [displayCard addSubview:displayTitle];
+    [displayTitle release];
+
+    displayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(14, 37, 470, 32) pullsDown:NO];
+    [displayPopup setFont:[NSFont systemFontOfSize:14 weight:NSFontWeightMedium]];
+    [displayPopup setToolTip:@"Choose the display captured on the remote computer"];
+    [displayPopup setAccessibilityLabel:@"Remote display"];
     [displayPopup setTarget:self];
     [displayPopup setAction:@selector(switchDisplay:)];
-    [content addSubview:displayPopup];
-    [content addSubview:makeButton(@"Refresh", NSMakeRect(605, 72, 95, 32), self, @selector(refreshDisplays:))];
+    [displayCard addSubview:displayPopup];
+
+    previousDisplayButton = [makeButton(@"‹", NSMakeRect(494, 37, 42, 32), self, @selector(previousDisplay:)) retain];
+    nextDisplayButton = [makeButton(@"›", NSMakeRect(540, 37, 42, 32), self, @selector(nextDisplay:)) retain];
+    refreshDisplayButton = [makeButton(@"Refresh", NSMakeRect(590, 37, 76, 32), self, @selector(refreshDisplays:)) retain];
+    [previousDisplayButton setToolTip:@"Previous remote display"];
+    [nextDisplayButton setToolTip:@"Next remote display"];
+    [refreshDisplayButton setToolTip:@"Refresh remote displays"];
+    [displayCard addSubview:previousDisplayButton];
+    [displayCard addSubview:nextDisplayButton];
+    [displayCard addSubview:refreshDisplayButton];
+
+    displayStatusLabel = makeLabel(NSMakeRect(16, 11, 650, 18), 11);
+    [displayStatusLabel setTextColor:[NSColor secondaryLabelColor]];
+    [displayStatusLabel setStringValue:@"Waiting for display information…"];
+    [displayCard addSubview:displayStatusLabel];
+    [displayCard release];
 
     NSMenu* streamMenu = [[NSMenu alloc] initWithTitle:@"Stream"];
     NSMenuItem* monitorItem = [[NSMenuItem alloc] initWithTitle:@"Connection Monitor…"
@@ -214,7 +266,11 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     [countdownLabel release];
     [increaseButton release];
     [decreaseButton release];
+    [previousDisplayButton release];
+    [nextDisplayButton release];
+    [refreshDisplayButton release];
     [displayPopup release];
+    [displayStatusLabel release];
     [graph release];
     [window close];
     [window release];
@@ -227,7 +283,22 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
 - (void)refreshDisplays:(id)sender { if (actions.refreshDisplays) actions.refreshDisplays(); }
 - (void)switchDisplay:(id)sender {
     const NSInteger index = [displayPopup indexOfSelectedItem];
-    if (index >= 0 && actions.switchDisplay) actions.switchDisplay(static_cast<int>(index));
+    [self requestDisplayIndex:index];
+}
+- (void)previousDisplay:(id)sender {
+    const NSInteger count = [displayPopup numberOfItems];
+    if (count > 1) [self requestDisplayIndex:([displayPopup indexOfSelectedItem] - 1 + count) % count];
+}
+- (void)nextDisplay:(id)sender {
+    const NSInteger count = [displayPopup numberOfItems];
+    if (count > 1) [self requestDisplayIndex:([displayPopup indexOfSelectedItem] + 1) % count];
+}
+- (void)requestDisplayIndex:(NSInteger)index {
+    if (index < 0 || index >= [displayPopup numberOfItems]) return;
+    [displayPopup selectItemAtIndex:index];
+    requestedDisplayIndex = index;
+    [displayStatusLabel setStringValue:[NSString stringWithFormat:@"Switching to display %ld…", index + 1]];
+    if (actions.switchDisplay) actions.switchDisplay(static_cast<int>(index));
 }
 
 - (void)update:(const StreamMonitorModel::Snapshot&)snapshot
@@ -287,7 +358,35 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     if (selected >= 0 && selected < [displayPopup numberOfItems]) {
         [displayPopup selectItemAtIndex:selected];
     }
-    [displayPopup setEnabled:[displayPopup numberOfItems] > 0];
+    const NSInteger displayCount = [displayPopup numberOfItems];
+    const bool hasDisplays = displayCount > 0;
+    const bool canCycle = displayCount > 1;
+    if (requestedDisplayIndex >= displayCount) {
+        requestedDisplayIndex = -1;
+    }
+    if (requestedDisplayIndex >= 0 && snapshot.currentDisplay == requestedDisplayIndex) {
+        requestedDisplayIndex = -1;
+    }
+    if (!hasDisplays) {
+        [displayStatusLabel setStringValue:@"Live display switching is unavailable on this host"];
+    }
+    else if (requestedDisplayIndex >= 0) {
+        [displayStatusLabel setStringValue:[NSString stringWithFormat:@"Switching to display %ld…", requestedDisplayIndex + 1]];
+    }
+    else {
+        const NSInteger active = [displayPopup indexOfSelectedItem];
+        if (active >= 0) {
+            [displayStatusLabel setStringValue:[NSString stringWithFormat:@"Display %ld of %ld · Video and pointer are linked",
+                                                                          active + 1, displayCount]];
+        }
+        else {
+            [displayStatusLabel setStringValue:@"Choose the remote display to stream and control"];
+        }
+    }
+    [displayPopup setEnabled:hasDisplays];
+    [previousDisplayButton setEnabled:canCycle];
+    [nextDisplayButton setEnabled:canCycle];
+    [refreshDisplayButton setEnabled:true];
 }
 @end
 
