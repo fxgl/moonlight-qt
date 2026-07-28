@@ -54,6 +54,7 @@
 #define SER_DIRECTCLIPBOARDPASTE "directclipboardpaste"
 #define SER_CLIPBOARDSYNC "clipboardsync"
 #define SER_CLIENTKEYBOARDLAYOUT "clientkeyboardlayout"
+#define SER_CROSSPLATFORMSHORTCUTS "crossplatformshortcuts"
 #define SER_LANGUAGE "language"
 #define SER_RENDERER "renderer"
 
@@ -159,6 +160,7 @@ void StreamingPreferences::reload()
     directClipboardPaste = settings.value(SER_DIRECTCLIPBOARDPASTE, true).toBool();
     clipboardSync = settings.value(SER_CLIPBOARDSYNC, true).toBool();
     clientKeyboardLayout = settings.value(SER_CLIENTKEYBOARDLAYOUT, false).toBool();
+    crossPlatformShortcuts = settings.value(SER_CROSSPLATFORMSHORTCUTS, false).toBool();
     enableHdr = settings.value(SER_HDR, false).toBool();
     captureSysKeysMode = static_cast<CaptureSysKeysMode>(settings.value(SER_CAPTURESYSKEYS,
                                                          static_cast<int>(CaptureSysKeysMode::CSK_OFF)).toInt());
@@ -374,6 +376,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_DIRECTCLIPBOARDPASTE, directClipboardPaste);
     settings.setValue(SER_CLIPBOARDSYNC, clipboardSync);
     settings.setValue(SER_CLIENTKEYBOARDLAYOUT, clientKeyboardLayout);
+    settings.setValue(SER_CROSSPLATFORMSHORTCUTS, crossPlatformShortcuts);
 }
 
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)
