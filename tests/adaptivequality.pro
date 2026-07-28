@@ -15,7 +15,8 @@ SOURCES += \
 HEADERS += \
     ../app/streaming/adaptivequalitycontroller.h \
     ../app/streaming/streammonitormodel.h \
-    ../app/streaming/input/keyboardlayout.h
+    ../app/streaming/input/keyboardlayout.h \
+    ../app/streaming/input/keyboardshortcuttranslator.h
 
 macx {
     OBJECTIVE_SOURCES += ../app/streaming/input/keyboardlayout_mac.mm

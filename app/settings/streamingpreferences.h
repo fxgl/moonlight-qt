@@ -159,6 +159,7 @@ public:
     Q_PROPERTY(bool directClipboardPaste MEMBER directClipboardPaste NOTIFY directClipboardPasteChanged)
     Q_PROPERTY(bool clipboardSync MEMBER clipboardSync NOTIFY clipboardSyncChanged)
     Q_PROPERTY(bool clientKeyboardLayout MEMBER clientKeyboardLayout NOTIFY clientKeyboardLayoutChanged)
+    Q_PROPERTY(bool crossPlatformShortcuts MEMBER crossPlatformShortcuts NOTIFY crossPlatformShortcutsChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
 
@@ -196,6 +197,7 @@ public:
     bool directClipboardPaste;
     bool clipboardSync;
     bool clientKeyboardLayout;
+    bool crossPlatformShortcuts;
     int packetSize;
     AudioConfig audioConfig;
     VideoCodecConfig videoCodecConfig;
@@ -248,6 +250,7 @@ signals:
     void directClipboardPasteChanged();
     void clipboardSyncChanged();
     void clientKeyboardLayoutChanged();
+    void crossPlatformShortcutsChanged();
     void languageChanged();
     void rendererSelectionChanged();
 

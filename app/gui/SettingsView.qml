@@ -1417,6 +1417,24 @@ Flickable {
                     ToolTip.text: qsTr("Sends printable characters as Unicode text composed by the client. Enable this for remote desktop use when the client and host keyboard layouts differ. Disable it for games that need direct letter or number key presses.")
                 }
 
+                CheckBox {
+                    id: crossPlatformShortcutsCheck
+                    hoverEnabled: true
+                    width: parent.width
+                    visible: Qt.platform.os === "osx" || Qt.platform.os === "windows"
+                    text: qsTr("Translate shortcuts between macOS and Windows")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.crossPlatformShortcuts
+                    onCheckedChanged: {
+                        StreamingPreferences.crossPlatformShortcuts = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 10000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Swaps Command with Control/Windows when forwarding keyboard input. This makes common shortcuts such as cut, copy, paste, undo, select all, find, open, print, save, new tab, and close use their familiar keys on the other system. Enable this only when the client and host run different operating systems.")
+                }
+
                 Row {
                     spacing: 5
                     width: parent.width

@@ -2,6 +2,7 @@
 
 #include <Limelight.h>
 #include "SDL_compat.h"
+#include "streaming/input/keyboardshortcuttranslator.h"
 
 #define VK_0 0x30
 #define VK_A 0x41
@@ -252,7 +253,7 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         modifiers |= MODIFIER_SHIFT;
     }
     if (event->keysym.mod & KMOD_GUI) {
-        if (isSystemKeyCaptureActive()) {
+        if (isSystemKeyCaptureActive() || m_CrossPlatformShortcuts) {
             modifiers |= MODIFIER_META;
         }
     }
@@ -397,13 +398,13 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
                 keyCode = 0xA5;
                 break;
             case SDL_SCANCODE_LGUI:
-                if (!isSystemKeyCaptureActive()) {
+                if (!isSystemKeyCaptureActive() && !m_CrossPlatformShortcuts) {
                     return;
                 }
                 keyCode = 0x5B;
                 break;
             case SDL_SCANCODE_RGUI:
-                if (!isSystemKeyCaptureActive()) {
+                if (!isSystemKeyCaptureActive() && !m_CrossPlatformShortcuts) {
                     return;
                 }
                 keyCode = 0x5C;
@@ -486,6 +487,10 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
                              event->keysym.scancode);
                 return;
         }
+    }
+
+    if (m_CrossPlatformShortcuts) {
+        KeyboardShortcutTranslator::translate(keyCode, modifiers);
     }
 
     // Track the key state so we always know which keys are down

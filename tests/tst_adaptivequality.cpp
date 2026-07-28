@@ -5,6 +5,7 @@
 #include "streaming/adaptivequalitycontroller.h"
 #include "streaming/streammonitormodel.h"
 #include "streaming/input/keyboardlayout.h"
+#include "streaming/input/keyboardshortcuttranslator.h"
 
 class AdaptiveQualityControllerTest : public QObject
 {
@@ -28,10 +29,32 @@ private slots:
     void reportsManualControlLimits();
     void synchronizesKeyboardLayoutOnlyWhenNeeded();
     void keepsKeyboardLayoutProtocolStable();
+    void translatesCrossPlatformShortcutModifiers();
 #if defined(Q_OS_DARWIN) || defined(Q_OS_WIN)
     void detectsNativeKeyboardLayout();
 #endif
 };
+
+void AdaptiveQualityControllerTest::translatesCrossPlatformShortcutModifiers()
+{
+    short keyCode = 0x5B; // VK_LWIN / Command
+    char modifiers = MODIFIER_META | MODIFIER_SHIFT;
+    KeyboardShortcutTranslator::translate(keyCode, modifiers);
+    QCOMPARE(keyCode, (short)0xA2); // VK_LCONTROL
+    QCOMPARE(modifiers, (char)(MODIFIER_CTRL | MODIFIER_SHIFT));
+
+    keyCode = 0xA3; // VK_RCONTROL
+    modifiers = MODIFIER_CTRL | MODIFIER_ALT;
+    KeyboardShortcutTranslator::translate(keyCode, modifiers);
+    QCOMPARE(keyCode, (short)0x5C); // VK_RWIN / Command
+    QCOMPARE(modifiers, (char)(MODIFIER_META | MODIFIER_ALT));
+
+    keyCode = 0x43; // C
+    modifiers = MODIFIER_META;
+    KeyboardShortcutTranslator::translate(keyCode, modifiers);
+    QCOMPARE(keyCode, (short)0x43);
+    QCOMPARE(modifiers, (char)MODIFIER_CTRL);
+}
 
 static std::vector<AdaptiveQualityController::Tier> qualityTiers()
 {

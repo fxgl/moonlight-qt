@@ -219,6 +219,7 @@ private:
     bool m_DirectClipboardPaste;
     bool m_ClientKeyboardLayout;
     bool m_ClipboardSync;
+    bool m_CrossPlatformShortcuts;
 
     bool m_MouseWasInVideoRegion;
     bool m_PendingMouseButtonsAllUpOnVideoRegionLeave;

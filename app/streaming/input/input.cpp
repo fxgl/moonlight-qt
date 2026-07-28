@@ -18,6 +18,7 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
       m_DirectClipboardPaste(prefs.directClipboardPaste),
       m_ClientKeyboardLayout(prefs.clientKeyboardLayout),
       m_ClipboardSync(prefs.clipboardSync),
+      m_CrossPlatformShortcuts(prefs.crossPlatformShortcuts),
       m_MouseWasInVideoRegion(false),
       m_PendingMouseButtonsAllUpOnVideoRegionLeave(false),
       m_PointerRegionLockActive(false),
