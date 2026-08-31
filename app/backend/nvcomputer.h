@@ -95,6 +95,7 @@ public:
     int currentGameId;
     QString gfeVersion;
     QString appVersion;
+    QString serverPlatform;
     QVector<NvDisplayMode> displayModes;
     int maxLumaPixelsHEVC;
     int serverCodecModeSupport;

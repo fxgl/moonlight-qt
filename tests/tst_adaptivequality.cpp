@@ -26,14 +26,63 @@ private slots:
     void capsMonitorHistory();
     void parsesDisplayList();
     void rejectsMalformedDisplayList();
+    void cyclesRemoteDisplays();
     void reportsManualControlLimits();
     void synchronizesKeyboardLayoutOnlyWhenNeeded();
     void keepsKeyboardLayoutProtocolStable();
+    void translatesShortcutsOnlyBetweenMacOSAndWindows();
     void translatesCrossPlatformShortcutModifiers();
 #if defined(Q_OS_DARWIN) || defined(Q_OS_WIN)
     void detectsNativeKeyboardLayout();
 #endif
 };
+
+void AdaptiveQualityControllerTest::translatesShortcutsOnlyBetweenMacOSAndWindows()
+{
+    using Os = KeyboardShortcutTranslator::OperatingSystem;
+
+    QVERIFY(KeyboardShortcutTranslator::shouldTranslate(Os::MacOS, Os::Windows));
+    QVERIFY(KeyboardShortcutTranslator::shouldTranslate(Os::Windows, Os::MacOS));
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(Os::MacOS, Os::MacOS));
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(Os::Windows, Os::Windows));
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(Os::Unknown, Os::Windows));
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(Os::MacOS, Os::Unknown));
+
+    QCOMPARE(KeyboardShortcutTranslator::operatingSystemFromPlatform(QStringLiteral("windows")),
+             Os::Windows);
+    QCOMPARE(KeyboardShortcutTranslator::operatingSystemFromPlatform(QStringLiteral("macos")),
+             Os::MacOS);
+    QCOMPARE(KeyboardShortcutTranslator::operatingSystemFromPlatform(QStringLiteral("osx")),
+             Os::MacOS);
+    QCOMPARE(KeyboardShortcutTranslator::operatingSystemFromPlatform(QString()), Os::Unknown);
+
+#ifdef Q_OS_DARWIN
+    QVERIFY(KeyboardShortcutTranslator::shouldTranslate(QStringLiteral("windows")));
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(QStringLiteral("macos")));
+#elif defined(Q_OS_WIN)
+    QVERIFY(KeyboardShortcutTranslator::shouldTranslate(QStringLiteral("macos")));
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(QStringLiteral("windows")));
+#else
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(QStringLiteral("windows")));
+    QVERIFY(!KeyboardShortcutTranslator::shouldTranslate(QStringLiteral("macos")));
+#endif
+}
+
+void AdaptiveQualityControllerTest::cyclesRemoteDisplays()
+{
+    StreamMonitorModel model;
+    model.setDisplays({"Left", "Center", "Right"}, 1);
+
+    QCOMPARE(model.adjacentDisplay(1), 2);
+    QCOMPARE(model.adjacentDisplay(-1), 0);
+
+    model.setDisplays({"Left", "Center", "Right"}, 2);
+    QCOMPARE(model.adjacentDisplay(1), 0);
+
+    model.setDisplays({"Only"}, 0);
+    QCOMPARE(model.adjacentDisplay(1), -1);
+    QCOMPARE(model.adjacentDisplay(0), -1);
+}
 
 void AdaptiveQualityControllerTest::translatesCrossPlatformShortcutModifiers()
 {

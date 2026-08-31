@@ -1879,53 +1879,86 @@ void Session::changeAdaptiveQuality(bool increase)
     }
 }
 
-void Session::refreshStreamMonitor(bool force)
+void Session::cycleRemoteDisplay(int direction)
 {
-#ifdef Q_OS_DARWIN
-    if (!m_MacStreamMonitor) {
+    if (!(LiGetHostFeatureFlags() & LI_FF_LIVE_DISPLAY_SWITCH)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Live remote display switching is unsupported by this host");
         return;
     }
 
+    const int displayIndex = m_StreamMonitorModel.adjacentDisplay(direction);
+    if (displayIndex < 0) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Remote display list is not ready or contains fewer than two displays");
+        LiRequestHostDisplayList();
+        return;
+    }
+
+    const int err = LiRequestHostDisplaySwitch(static_cast<unsigned short>(displayIndex));
+    if (err != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Remote display switch request failed: %d", err);
+        return;
+    }
+
+    const auto snapshot = m_StreamMonitorModel.snapshot();
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Switching to remote display %d of %d: %s",
+                displayIndex + 1,
+                static_cast<int>(snapshot.displays.size()),
+                snapshot.displays[displayIndex].c_str());
+    m_StreamMonitorModel.setDisplays(snapshot.displays, displayIndex);
+    refreshStreamMonitor(true);
+}
+
+void Session::refreshStreamMonitor(bool force)
+{
     const Uint64 now = SDL_GetTicks64();
     if (!force && now - m_LastStreamMonitorUpdate < 1000) {
         return;
     }
     m_LastStreamMonitorUpdate = now;
 
-    RTP_VIDEO_STATS stats;
-    LiGetRTPVideoStats(&stats);
-    m_StreamMonitorModel.recordCounters({stats.receivedBytes,
-                                         stats.packetCountVideo,
-                                         stats.packetCountFecRecovered}, now);
+#ifdef Q_OS_DARWIN
+    if (m_MacStreamMonitor) {
+        RTP_VIDEO_STATS stats;
+        LiGetRTPVideoStats(&stats);
+        m_StreamMonitorModel.recordCounters({stats.receivedBytes,
+                                             stats.packetCountVideo,
+                                             stats.packetCountFecRecovered}, now);
 
-    uint32_t rttMs;
-    uint32_t jitterMs;
-    if (LiGetEstimatedRttInfo(&rttMs, &jitterMs)) {
-        m_StreamMonitorModel.setNetworkLatency(rttMs, jitterMs);
-    }
-    else {
-        m_StreamMonitorModel.setNetworkLatency(0, 0);
-    }
+        uint32_t rttMs;
+        uint32_t jitterMs;
+        if (LiGetEstimatedRttInfo(&rttMs, &jitterMs)) {
+            m_StreamMonitorModel.setNetworkLatency(rttMs, jitterMs);
+        }
+        else {
+            m_StreamMonitorModel.setNetworkLatency(0, 0);
+        }
 
-    VIDEO_STATS videoStats {};
-    if (SDL_TryLockMutex(m_DecoderLock) == 0) {
-        const bool hasVideoStats = m_VideoDecoder && m_VideoDecoder->getVideoStats(videoStats);
-        SDL_UnlockMutex(m_DecoderLock);
-        if (hasVideoStats) {
-            m_StreamMonitorModel.recordPerformance({videoStats.measurementDurationUs,
-                                                    videoStats.receivedFrames,
-                                                    videoStats.decodedFrames,
-                                                    videoStats.renderedFrames,
-                                                    videoStats.totalFrames,
-                                                    videoStats.networkDroppedFrames,
-                                                    videoStats.pacerDroppedFrames,
-                                                    videoStats.framesWithHostProcessingLatency,
-                                                    videoStats.totalHostProcessingLatency,
-                                                    videoStats.totalDecodeTimeUs,
-                                                    videoStats.totalPacerTimeUs,
-                                                    videoStats.totalRenderTimeUs});
+        VIDEO_STATS videoStats {};
+        if (SDL_TryLockMutex(m_DecoderLock) == 0) {
+            const bool hasVideoStats = m_VideoDecoder && m_VideoDecoder->getVideoStats(videoStats);
+            SDL_UnlockMutex(m_DecoderLock);
+            if (hasVideoStats) {
+                m_StreamMonitorModel.recordPerformance({videoStats.measurementDurationUs,
+                                                        videoStats.receivedFrames,
+                                                        videoStats.decodedFrames,
+                                                        videoStats.renderedFrames,
+                                                        videoStats.totalFrames,
+                                                        videoStats.networkDroppedFrames,
+                                                        videoStats.pacerDroppedFrames,
+                                                        videoStats.framesWithHostProcessingLatency,
+                                                        videoStats.totalHostProcessingLatency,
+                                                        videoStats.totalDecodeTimeUs,
+                                                        videoStats.totalPacerTimeUs,
+                                                        videoStats.totalRenderTimeUs});
+            }
         }
     }
+#endif
+
     {
         std::lock_guard<std::mutex> lock(m_AdaptiveQualityMutex);
         if (m_AdaptiveQualityController) {
@@ -1955,24 +1988,115 @@ void Session::refreshStreamMonitor(bool force)
                                             false);
         }
     }
-    m_MacStreamMonitor->update(m_StreamMonitorModel.snapshot());
-#else
-    Q_UNUSED(force);
+
+    updateStreamWindowTitle();
+
+#ifdef Q_OS_DARWIN
+    if (m_MacStreamMonitor) {
+        m_MacStreamMonitor->update(m_StreamMonitorModel.snapshot());
+    }
 #endif
+}
+
+void Session::updateStreamWindowTitle()
+{
+    if (!m_Window) {
+        return;
+    }
+
+    const auto& snapshot = m_StreamMonitorModel.snapshot();
+    const int width = snapshot.width > 0 ? snapshot.width : m_ActiveVideoWidth;
+    const int height = snapshot.height > 0 ? snapshot.height : m_ActiveVideoHeight;
+    const int bitrateKbps = snapshot.targetBitrateKbps > 0 ?
+                                snapshot.targetBitrateKbps : m_StreamConfig.bitrate;
+
+#ifdef Q_OS_DARWIN
+    QString title = m_Computer->name;
+#else
+    QString title = m_Computer->name + QStringLiteral(" - Moonlight");
+#endif
+    title += QStringLiteral(" — %1×%2 · %3 Mbps")
+                 .arg(width)
+                 .arg(height)
+                 .arg(bitrateKbps / 1000.0, 0, 'f', 1);
+
+    if (!(LiGetHostFeatureFlags() & LI_FF_LIVE_DISPLAY_SWITCH)) {
+        title += QStringLiteral(" · Screens: unavailable");
+    }
+    else if (snapshot.displays.empty()) {
+        title += QStringLiteral(" · Screens: …");
+    }
+    else {
+        QStringList screenNumbers;
+        screenNumbers.reserve(static_cast<int>(snapshot.displays.size()));
+        for (int i = 0; i < static_cast<int>(snapshot.displays.size()); i++) {
+            screenNumbers.append(i == snapshot.currentDisplay ?
+                                     QStringLiteral("[%1]").arg(i + 1) :
+                                     QString::number(i + 1));
+        }
+        title += QStringLiteral(" · Screens: %1").arg(screenNumbers.join(','));
+
+        if (snapshot.currentDisplay >= 0 &&
+                snapshot.currentDisplay < static_cast<int>(snapshot.displays.size())) {
+            QString displayName = QString::fromUtf8(
+                snapshot.displays[snapshot.currentDisplay].data(),
+                static_cast<int>(snapshot.displays[snapshot.currentDisplay].size())).simplified();
+            if (displayName.size() > 48) {
+                displayName = displayName.left(47) + QChar(0x2026);
+            }
+            if (!displayName.isEmpty()) {
+                title += QStringLiteral(" %1").arg(displayName);
+            }
+        }
+    }
+
+    if (m_InputHandler) {
+        title += QStringLiteral(" · Layout: %1").arg(m_InputHandler->keyboardLayoutStatus());
+    }
+
+    const int clipboardLength = QGuiApplication::clipboard()->text().size();
+    const QString clipboardOwner = m_ClipboardFromHost ?
+                                       QStringLiteral("Remote") : QStringLiteral("Local");
+    const QString clipboardState = !m_Preferences->clipboardSync ?
+                                       QStringLiteral("off") :
+                                   !(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_SYNC) ?
+                                       QStringLiteral("unsupported") : QStringLiteral("synced");
+    title += QStringLiteral(" · Clipboard: %1 · %2 chars · %3")
+                 .arg(clipboardOwner)
+                 .arg(clipboardLength)
+                 .arg(clipboardState);
+
+    if (title == m_LastStreamWindowTitle) {
+        return;
+    }
+
+    m_LastStreamWindowTitle = title;
+    const QByteArray utf8Title = title.toUtf8();
+    SDL_SetWindowTitle(m_Window, utf8Title.constData());
 }
 
 void Session::syncClipboardToHost()
 {
-    if (s_ActiveSession != this || !m_Preferences->clipboardSync ||
-            !(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_SYNC)) {
+    if (s_ActiveSession != this) {
         return;
     }
 
     const QByteArray utf8Text = QGuiApplication::clipboard()->text().toUtf8();
-    if (utf8Text == m_LastRemoteClipboardText) {
+    if (m_HasPendingRemoteClipboardText && utf8Text == m_LastRemoteClipboardText) {
+        m_ClipboardFromHost = true;
+        m_HasPendingRemoteClipboardText = false;
         m_LastRemoteClipboardText.clear();
+        updateStreamWindowTitle();
         return;
     }
+
+    m_ClipboardFromHost = false;
+    updateStreamWindowTitle();
+
+    if (!m_Preferences->clipboardSync || !(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_SYNC)) {
+        return;
+    }
+
     if (utf8Text.size() > 60 * 1024) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Clipboard text exceeds the 60 KiB synchronization limit");
@@ -2022,7 +2146,8 @@ void Session::start()
 
     // Initialize the gamepad code with our preferences
     // NB: m_InputHandler must be initialize before starting the connection.
-    m_InputHandler = new SdlInputHandler(*m_Preferences, m_StreamConfig.width, m_StreamConfig.height);
+    m_InputHandler = new SdlInputHandler(*m_Preferences, m_StreamConfig.width,
+                                         m_StreamConfig.height, m_Computer->serverPlatform);
 
     // Kick off the async connection thread then return to the caller to pump the event loop
     auto thread = new AsyncConnectionStartThread(this);
@@ -2241,11 +2366,12 @@ void Session::exec()
             }
         },
     });
+#endif
+
     if (LiGetHostFeatureFlags() & LI_FF_LIVE_DISPLAY_SWITCH) {
         LiRequestHostDisplayList();
     }
     refreshStreamMonitor(true);
-#endif
 
     // Hijack this thread to be the SDL main thread. We have to do this
     // because we want to suspend all Qt processing until the stream is over.
@@ -2327,11 +2453,15 @@ void Session::exec()
             case SDL_CODE_SET_CLIPBOARD_TEXT: {
                 auto* utf8Text = static_cast<QByteArray*>(event.user.data1);
                 if (s_ActiveSession == this && m_Preferences->clipboardSync) {
+                    m_ClipboardFromHost = true;
+                    m_HasPendingRemoteClipboardText = false;
                     auto* clipboard = QGuiApplication::clipboard();
                     if (clipboard->text().toUtf8() != *utf8Text) {
                         m_LastRemoteClipboardText = *utf8Text;
+                        m_HasPendingRemoteClipboardText = true;
                         clipboard->setText(QString::fromUtf8(*utf8Text));
                     }
+                    updateStreamWindowTitle();
                 }
                 delete utf8Text;
                 break;

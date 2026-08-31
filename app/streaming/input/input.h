@@ -85,7 +85,8 @@ struct DualSenseOutputReport{
 class SdlInputHandler
 {
 public:
-    explicit SdlInputHandler(StreamingPreferences& prefs, int streamWidth, int streamHeight);
+    explicit SdlInputHandler(StreamingPreferences& prefs, int streamWidth, int streamHeight,
+                             const QString& hostPlatform);
 
     ~SdlInputHandler();
 
@@ -149,6 +150,8 @@ public:
 
     bool isSystemKeyCaptureActive();
 
+    QString keyboardLayoutStatus() const;
+
     void setCaptureActive(bool active);
 
     bool isMouseInVideoRegion(int mouseX, int mouseY, int windowWidth = -1, int windowHeight = -1);
@@ -173,6 +176,8 @@ private:
         KeyComboTogglePointerRegionLock,
         KeyComboQuitAndExit,
         KeyComboToggleKeyboardGrab,
+        KeyComboPreviousRemoteDisplay,
+        KeyComboNextRemoteDisplay,
         KeyComboMax
     };
 
@@ -192,6 +197,8 @@ private:
     void handleRelativeFingerEvent(SDL_TouchFingerEvent* event);
 
     void performSpecialKeyCombo(KeyCombo combo);
+
+    void updateLocalCursorStyle();
 
     void syncKeyboardLayout(bool force);
 
@@ -238,6 +245,8 @@ private:
     QStringList m_IgnoreDeviceGuids;
     StreamingPreferences::CaptureSysKeysMode m_CaptureSystemKeysMode;
     int m_MouseCursorCapturedVisibilityState;
+    SDL_Cursor* m_DefaultCursor;
+    SDL_Cursor* m_LocalDotCursor;
 
     struct {
         KeyCombo keyCombo;

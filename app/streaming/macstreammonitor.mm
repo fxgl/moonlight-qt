@@ -240,6 +240,30 @@ static NSButton* makeButton(NSString* title, NSRect frame, id target, SEL action
     [monitorItem setTarget:self];
     [streamMenu addItem:monitorItem];
     [monitorItem release];
+
+    [streamMenu addItem:[NSMenuItem separatorItem]];
+    const unichar leftArrow = NSLeftArrowFunctionKey;
+    NSMenuItem* previousDisplayItem = [[NSMenuItem alloc]
+        initWithTitle:@"Previous Remote Display"
+               action:@selector(previousDisplay:)
+        keyEquivalent:[NSString stringWithCharacters:&leftArrow length:1]];
+    [previousDisplayItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand |
+                                                       NSEventModifierFlagOption];
+    [previousDisplayItem setTarget:self];
+    [streamMenu addItem:previousDisplayItem];
+    [previousDisplayItem release];
+
+    const unichar rightArrow = NSRightArrowFunctionKey;
+    NSMenuItem* nextDisplayItem = [[NSMenuItem alloc]
+        initWithTitle:@"Next Remote Display"
+               action:@selector(nextDisplay:)
+        keyEquivalent:[NSString stringWithCharacters:&rightArrow length:1]];
+    [nextDisplayItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand |
+                                                   NSEventModifierFlagOption];
+    [nextDisplayItem setTarget:self];
+    [streamMenu addItem:nextDisplayItem];
+    [nextDisplayItem release];
+
     rootMenuItem = [[NSMenuItem alloc] initWithTitle:@"Stream" action:nil keyEquivalent:@""];
     [rootMenuItem setSubmenu:streamMenu];
     [streamMenu release];

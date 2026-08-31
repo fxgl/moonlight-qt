@@ -1361,8 +1361,8 @@ Flickable {
                     ToolTip.delay: 1000
                     ToolTip.timeout: 10000
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("This enables seamless mouse control without capturing the client's mouse cursor. It is ideal for remote desktop usage but will not work in most games.") + " " +
-                                  qsTr("You can toggle this while streaming using Ctrl+Alt+Shift+M.") + "\n\n" +
+                    ToolTip.text: qsTr("This enables seamless mouse control and shows a small local cursor dot, so the pointer remains visible even when the host does not include it in the video. It is ideal for remote desktop usage but will not work in most games.") + " " +
+                                  qsTr("You can toggle this while streaming using Ctrl+Alt+Shift+M, or hide and show the local dot using Ctrl+Alt+Shift+C. On supported Sunshine hosts, switch remote displays using Command+Option+Left/Right on macOS or Ctrl+Alt+Shift+Left/Right on other platforms.") + "\n\n" +
                                   qsTr("NOTE: Due to a bug in GeForce Experience, this option may not work properly if your host PC has multiple monitors.")
                 }
 
@@ -1432,7 +1432,7 @@ Flickable {
                     ToolTip.delay: 1000
                     ToolTip.timeout: 10000
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Swaps Command with Control/Windows when forwarding keyboard input. This makes common shortcuts such as cut, copy, paste, undo, select all, find, open, print, save, new tab, and close use their familiar keys on the other system. Enable this only when the client and host run different operating systems.")
+                    ToolTip.text: qsTr("Swaps Command with Control/Windows when forwarding keyboard input. This makes common shortcuts such as cut, copy, paste, undo, select all, find, open, print, save, new tab, and close use their familiar keys on the other system. Moonlight applies this setting only when the client and host run different operating systems.")
                 }
 
                 Row {

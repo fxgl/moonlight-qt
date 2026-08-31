@@ -1,10 +1,47 @@
 #pragma once
 
 #include <Limelight.h>
+#include <QString>
 
 class KeyboardShortcutTranslator
 {
 public:
+    enum class OperatingSystem {
+        Unknown,
+        Windows,
+        MacOS,
+    };
+
+    static OperatingSystem operatingSystemFromPlatform(const QString& platform)
+    {
+        if (platform.compare(QStringLiteral("windows"), Qt::CaseInsensitive) == 0) {
+            return OperatingSystem::Windows;
+        }
+        if (platform.compare(QStringLiteral("macos"), Qt::CaseInsensitive) == 0 ||
+                platform.compare(QStringLiteral("osx"), Qt::CaseInsensitive) == 0) {
+            return OperatingSystem::MacOS;
+        }
+        return OperatingSystem::Unknown;
+    }
+
+    static bool shouldTranslate(OperatingSystem client, OperatingSystem host)
+    {
+        return (client == OperatingSystem::MacOS && host == OperatingSystem::Windows) ||
+               (client == OperatingSystem::Windows && host == OperatingSystem::MacOS);
+    }
+
+    static bool shouldTranslate(const QString& hostPlatform)
+    {
+#ifdef Q_OS_DARWIN
+        constexpr OperatingSystem client = OperatingSystem::MacOS;
+#elif defined(Q_OS_WIN)
+        constexpr OperatingSystem client = OperatingSystem::Windows;
+#else
+        constexpr OperatingSystem client = OperatingSystem::Unknown;
+#endif
+        return shouldTranslate(client, operatingSystemFromPlatform(hostPlatform));
+    }
+
     // Moonlight's keyboard protocol uses Windows virtual-key codes on every
     // client platform. Sunshine maps VK_LWIN/VK_RWIN to Command on macOS.
     // Swapping those keys with Control therefore translates the primary

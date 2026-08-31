@@ -77,6 +77,7 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
 
         // Toggle mouse mode
         m_AbsoluteMouseMode = !m_AbsoluteMouseMode;
+        m_MouseCursorCapturedVisibilityState = m_AbsoluteMouseMode ? SDL_ENABLE : SDL_DISABLE;
 
         // Recapture input
         setCaptureActive(true);
@@ -178,6 +179,18 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         updateKeyboardGrabState();
         break;
 
+    case KeyComboPreviousRemoteDisplay:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected previous remote display combo");
+        Session::get()->cycleRemoteDisplay(-1);
+        break;
+
+    case KeyComboNextRemoteDisplay:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected next remote display combo");
+        Session::get()->cycleRemoteDisplay(1);
+        break;
+
     default:
         Q_UNREACHABLE();
     }
@@ -219,6 +232,24 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         // key-down, so forwarding the V key-up would create an unmatched event.
         return;
     }
+
+#ifdef Q_OS_DARWIN
+    // macOS reserves Control+Arrow for switching Spaces and may consume it even
+    // when additional modifiers are held. Command+Option+Arrow is delivered to
+    // the streaming window reliably and also matches the native Stream menu.
+    if (event->state == SDL_PRESSED &&
+            (event->keysym.mod & KMOD_GUI) &&
+            (event->keysym.mod & KMOD_ALT)) {
+        if (event->keysym.sym == SDLK_LEFT || event->keysym.scancode == SDL_SCANCODE_LEFT) {
+            performSpecialKeyCombo(KeyComboPreviousRemoteDisplay);
+            return;
+        }
+        if (event->keysym.sym == SDLK_RIGHT || event->keysym.scancode == SDL_SCANCODE_RIGHT) {
+            performSpecialKeyCombo(KeyComboNextRemoteDisplay);
+            return;
+        }
+    }
+#endif
 
     // Check for our special key combos
     if ((event->state == SDL_PRESSED) &&

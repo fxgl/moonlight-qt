@@ -185,7 +185,11 @@ private:
 
     void changeAdaptiveQuality(bool increase);
 
+    void cycleRemoteDisplay(int direction);
+
     void refreshStreamMonitor(bool force = false);
+
+    void updateStreamWindowTitle();
 
     void initializeAdaptiveQuality();
 
@@ -305,11 +309,14 @@ private:
 
     Overlay::OverlayManager m_OverlayManager;
     QByteArray m_LastRemoteClipboardText;
+    bool m_HasPendingRemoteClipboardText = false;
+    bool m_ClipboardFromHost = false;
     std::optional<AdaptiveQualityController> m_AdaptiveQualityController;
     std::mutex m_AdaptiveQualityMutex;
     StreamMonitorModel m_StreamMonitorModel;
     Uint64 m_LastStreamMonitorUpdate = 0;
     Uint64 m_LastAdaptiveStatusUpdate = 0;
+    QString m_LastStreamWindowTitle;
 #ifdef Q_OS_DARWIN
     std::unique_ptr<MacStreamMonitor> m_MacStreamMonitor;
 #endif

@@ -56,6 +56,7 @@ NvComputer::NvComputer(QSettings& settings)
     this->state = CS_UNKNOWN;
     this->gfeVersion = nullptr;
     this->appVersion = nullptr;
+    this->serverPlatform = nullptr;
     this->maxLumaPixelsHEVC = 0;
     this->serverCodecModeSupport = 0;
     this->pendingQuit = false;
@@ -200,6 +201,12 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
     // codename in the state field and no version of Sunshine does. We can use this to bypass
     // some assumptions about Nvidia hardware that don't apply to Sunshine hosts.
     this->isNvidiaServerSoftware = NvHTTP::getXmlString(serverInfo, "state").contains("MJOLNIR");
+
+    this->serverPlatform = NvHTTP::getXmlString(serverInfo, "Platform").toLower();
+    if (this->serverPlatform.isEmpty() && this->isNvidiaServerSoftware) {
+        // GeForce Experience only runs on Windows and predates the Platform extension.
+        this->serverPlatform = QStringLiteral("windows");
+    }
 
     this->pairState = NvHTTP::getXmlString(serverInfo, "PairStatus") == "1" ?
                 PS_PAIRED : PS_NOT_PAIRED;
@@ -565,6 +572,7 @@ bool NvComputer::update(const NvComputer& that)
     ASSIGN_IF_CHANGED(state);
     ASSIGN_IF_CHANGED(gfeVersion);
     ASSIGN_IF_CHANGED(appVersion);
+    ASSIGN_IF_CHANGED(serverPlatform);
     ASSIGN_IF_CHANGED(isSupportedServerVersion);
     ASSIGN_IF_CHANGED(isNvidiaServerSoftware);
     ASSIGN_IF_CHANGED(maxLumaPixelsHEVC);

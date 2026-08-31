@@ -1,6 +1,7 @@
 #include <Limelight.h>
 #include "SDL_compat.h"
 #include "streaming/session.h"
+#include "streaming/input/keyboardshortcuttranslator.h"
 #include "settings/mappingmanager.h"
 #include "path.h"
 #include "utils.h"
@@ -9,7 +10,45 @@
 #include <QDir>
 #include <QGuiApplication>
 
-SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, int streamHeight)
+namespace {
+
+SDL_Cursor* createLocalDotCursor()
+{
+    constexpr int cursorSize = 16;
+    constexpr int hotspot = cursorSize / 2;
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, cursorSize, cursorSize, 32,
+                                                          SDL_PIXELFORMAT_RGBA32);
+    if (!surface) {
+        return nullptr;
+    }
+
+    SDL_FillRect(surface, nullptr, SDL_MapRGBA(surface->format, 0, 0, 0, 0));
+    const Uint32 outline = SDL_MapRGBA(surface->format, 0, 0, 0, 255);
+    const Uint32 fill = SDL_MapRGBA(surface->format, 255, 255, 255, 255);
+    for (int y = 0; y < cursorSize; y++) {
+        for (int x = 0; x < cursorSize; x++) {
+            const int dx = x - hotspot;
+            const int dy = y - hotspot;
+            const int distanceSquared = dx * dx + dy * dy;
+            SDL_Rect pixel = {x, y, 1, 1};
+            if (distanceSquared <= 16) {
+                SDL_FillRect(surface, &pixel, outline);
+            }
+            if (distanceSquared <= 6) {
+                SDL_FillRect(surface, &pixel, fill);
+            }
+        }
+    }
+
+    SDL_Cursor* cursor = SDL_CreateColorCursor(surface, hotspot, hotspot);
+    SDL_FreeSurface(surface);
+    return cursor;
+}
+
+}
+
+SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, int streamHeight,
+                                 const QString& hostPlatform)
     : m_MultiController(prefs.multiController),
       m_GamepadMouse(prefs.gamepadMouse),
       m_SwapMouseButtons(prefs.swapMouseButtons),
@@ -18,7 +57,8 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
       m_DirectClipboardPaste(prefs.directClipboardPaste),
       m_ClientKeyboardLayout(prefs.clientKeyboardLayout),
       m_ClipboardSync(prefs.clipboardSync),
-      m_CrossPlatformShortcuts(prefs.crossPlatformShortcuts),
+      m_CrossPlatformShortcuts(prefs.crossPlatformShortcuts &&
+                               KeyboardShortcutTranslator::shouldTranslate(hostPlatform)),
       m_MouseWasInVideoRegion(false),
       m_PendingMouseButtonsAllUpOnVideoRegionLeave(false),
       m_PointerRegionLockActive(false),
@@ -26,7 +66,9 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
       m_FakeMouseCaptureActive(false),
       m_KeyboardCaptureActive(false),
       m_CaptureSystemKeysMode(prefs.captureSysKeysMode),
-      m_MouseCursorCapturedVisibilityState(SDL_DISABLE),
+      m_MouseCursorCapturedVisibilityState(prefs.absoluteMouseMode ? SDL_ENABLE : SDL_DISABLE),
+      m_DefaultCursor(nullptr),
+      m_LocalDotCursor(nullptr),
       m_LongPressTimer(0),
       m_StreamWidth(streamWidth),
       m_StreamHeight(streamHeight),
@@ -139,6 +181,16 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].scanCode = SDL_SCANCODE_K;
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].enabled = WMUtils::isRunningDesktopEnvironment();
 
+    m_SpecialKeyCombos[KeyComboPreviousRemoteDisplay].keyCombo = KeyComboPreviousRemoteDisplay;
+    m_SpecialKeyCombos[KeyComboPreviousRemoteDisplay].keyCode = SDLK_LEFT;
+    m_SpecialKeyCombos[KeyComboPreviousRemoteDisplay].scanCode = SDL_SCANCODE_LEFT;
+    m_SpecialKeyCombos[KeyComboPreviousRemoteDisplay].enabled = true;
+
+    m_SpecialKeyCombos[KeyComboNextRemoteDisplay].keyCombo = KeyComboNextRemoteDisplay;
+    m_SpecialKeyCombos[KeyComboNextRemoteDisplay].keyCode = SDLK_RIGHT;
+    m_SpecialKeyCombos[KeyComboNextRemoteDisplay].scanCode = SDL_SCANCODE_RIGHT;
+    m_SpecialKeyCombos[KeyComboNextRemoteDisplay].enabled = true;
+
     m_OldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
     m_OldIgnoreDevicesExcept = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT);
 
@@ -222,6 +274,14 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
 
 SdlInputHandler::~SdlInputHandler()
 {
+    if (m_LocalDotCursor != nullptr) {
+        if (SDL_GetCursor() == m_LocalDotCursor) {
+            SDL_SetCursor(m_DefaultCursor);
+        }
+        SDL_FreeCursor(m_LocalDotCursor);
+        m_LocalDotCursor = nullptr;
+    }
+
     for (int i = 0; i < MAX_GAMEPADS; i++) {
         if (m_GamepadState[i].mouseEmulationTimer != 0) {
             Session::get()->notifyMouseEmulationMode(false);
@@ -272,11 +332,31 @@ SdlInputHandler::~SdlInputHandler()
 void SdlInputHandler::setWindow(SDL_Window *window)
 {
     m_Window = window;
+    m_DefaultCursor = SDL_GetCursor();
+    if (!m_DefaultCursor) {
+        m_DefaultCursor = SDL_GetDefaultCursor();
+    }
+    m_LocalDotCursor = createLocalDotCursor();
+    if (!m_LocalDotCursor) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Unable to create local dot cursor: %s", SDL_GetError());
+    }
+    updateLocalCursorStyle();
     if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) {
         syncKeyboardLayout(true);
     }
     if (m_ClipboardSync && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) {
         LiSendClipboardFocusEvent(true);
+    }
+}
+
+void SdlInputHandler::updateLocalCursorStyle()
+{
+    if (m_LocalDotCursor != nullptr && m_AbsoluteMouseMode && isCaptureActive()) {
+        SDL_SetCursor(m_LocalDotCursor);
+    }
+    else if (m_DefaultCursor != nullptr) {
+        SDL_SetCursor(m_DefaultCursor);
     }
 }
 
@@ -341,6 +421,46 @@ void SdlInputHandler::syncKeyboardLayout(bool force)
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Failed to synchronize keyboard layout: %d", err);
     }
+}
+
+QString SdlInputHandler::keyboardLayoutStatus() const
+{
+    const auto currentLayout = KeyboardLayout::current();
+    QString layoutName;
+    if (currentLayout.isValid()) {
+        layoutName = QString::fromUtf8(currentLayout.language);
+        const int separator = currentLayout.layoutId.lastIndexOf('.');
+        QString layoutId = QString::fromUtf8(currentLayout.layoutId.mid(separator + 1));
+        if (!layoutId.isEmpty() && layoutId.compare(layoutName, Qt::CaseInsensitive) != 0) {
+            layoutName += QStringLiteral("/") + layoutId;
+        }
+    }
+    else {
+        layoutName = QStringLiteral("unknown");
+    }
+
+    if (layoutName.size() > 28) {
+        layoutName = layoutName.left(27) + QChar(0x2026);
+    }
+
+    QString syncState;
+    if (!m_ClientKeyboardLayout) {
+        syncState = QStringLiteral("sync off");
+    }
+    else if (!(LiGetHostFeatureFlags() & LI_FF_KEYBOARD_LAYOUT_SYNC)) {
+        syncState = QStringLiteral("unsupported");
+    }
+    else if (currentLayout.isValid() &&
+             currentLayout.platform == m_LastKeyboardLayout.platform &&
+             currentLayout.language == m_LastKeyboardLayout.language &&
+             currentLayout.layoutId == m_LastKeyboardLayout.layoutId) {
+        syncState = QStringLiteral("synced");
+    }
+    else {
+        syncState = QStringLiteral("pending");
+    }
+
+    return QStringLiteral("%1 (%2)").arg(layoutName, syncState);
 }
 
 bool SdlInputHandler::isCaptureActive()
@@ -450,6 +570,8 @@ void SdlInputHandler::setCaptureActive(bool active)
             SDL_SetRelativeMouseMode(SDL_FALSE);
         }
     }
+
+    updateLocalCursorStyle();
 
     // Update mouse pointer region constraints
     updatePointerRegionLock();

@@ -74,6 +74,7 @@ public:
                     bool canDecreaseQuality = true);
     void setDisplays(std::vector<std::string> displays, int currentDisplay);
     bool setDisplaysFromPayload(const char* payload, std::size_t length);
+    int adjacentDisplay(int direction) const;
     const Snapshot& snapshot() const;
 
 private:

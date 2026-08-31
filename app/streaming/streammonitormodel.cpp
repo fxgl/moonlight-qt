@@ -146,6 +146,18 @@ bool StreamMonitorModel::setDisplaysFromPayload(const char* payload, std::size_t
     return true;
 }
 
+int StreamMonitorModel::adjacentDisplay(int direction) const
+{
+    const int count = static_cast<int>(m_Snapshot.displays.size());
+    if (count < 2 || direction == 0) {
+        return -1;
+    }
+
+    const int current = m_Snapshot.currentDisplay >= 0 && m_Snapshot.currentDisplay < count ?
+                            m_Snapshot.currentDisplay : 0;
+    return (current + (direction > 0 ? 1 : count - 1)) % count;
+}
+
 const StreamMonitorModel::Snapshot& StreamMonitorModel::snapshot() const
 {
     return m_Snapshot;
