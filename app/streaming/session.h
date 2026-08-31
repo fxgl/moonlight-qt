@@ -12,6 +12,7 @@
 #include "adaptivequalitycontroller.h"
 #include "streammonitormodel.h"
 #ifdef Q_OS_DARWIN
+#include "macidleoverlay.h"
 #include "macstreammonitor.h"
 #endif
 #include "input/input.h"
@@ -189,6 +190,10 @@ private:
 
     void followHostActiveWindow();
 
+    void updateFocusIdleState();
+
+    void setFocusIdlePaused(bool paused);
+
     void refreshStreamMonitor(bool force = false);
 
     void updateStreamWindowTitle();
@@ -319,8 +324,12 @@ private:
     Uint64 m_LastStreamMonitorUpdate = 0;
     Uint64 m_LastActiveWindowDisplayRequest = 0;
     Uint64 m_LastAdaptiveStatusUpdate = 0;
+    Uint64 m_FocusLostAt = 0;
+    bool m_WindowFocused = true;
+    bool m_StreamPausedForFocusLoss = false;
     QString m_LastStreamWindowTitle;
 #ifdef Q_OS_DARWIN
+    std::unique_ptr<MacIdleOverlay> m_MacIdleOverlay;
     std::unique_ptr<MacStreamMonitor> m_MacStreamMonitor;
 #endif
 

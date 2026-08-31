@@ -420,12 +420,14 @@ macx {
     message(VideoToolbox renderer selected)
 
     SOURCES += \
+        streaming/macidleoverlay.mm \
         streaming/macstreammonitor.mm \
         streaming/video/ffmpeg-renderers/vt_base.mm \
         streaming/video/ffmpeg-renderers/vt_avsamplelayer.mm \
         streaming/video/ffmpeg-renderers/vt_metal.mm
 
     HEADERS += \
+        streaming/macidleoverlay.h \
         streaming/macstreammonitor.h \
         streaming/video/ffmpeg-renderers/vt.h
 }

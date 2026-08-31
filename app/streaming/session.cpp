@@ -1914,6 +1914,10 @@ void Session::cycleRemoteDisplay(int direction)
 
 void Session::followHostActiveWindow()
 {
+    if (m_StreamPausedForFocusLoss) {
+        return;
+    }
+
     if (!m_Preferences->autoDisplaySwitch ||
             !(LiGetHostFeatureFlags() & LI_FF_ACTIVE_WINDOW_DISPLAY)) {
         return;
@@ -1930,6 +1934,60 @@ void Session::followHostActiveWindow()
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Active-window display request failed: %d", err);
     }
+}
+
+void Session::updateFocusIdleState()
+{
+    constexpr Uint64 FocusIdlePauseDelayMs = 30 * 1000;
+
+    if (m_WindowFocused) {
+        if (m_StreamPausedForFocusLoss) {
+            setFocusIdlePaused(false);
+        }
+        return;
+    }
+
+    if (!(LiGetHostFeatureFlags() & LI_FF_VIDEO_PAUSE)) {
+        return;
+    }
+
+    if (!m_StreamPausedForFocusLoss && m_FocusLostAt != 0 &&
+            SDL_GetTicks64() - m_FocusLostAt >= FocusIdlePauseDelayMs) {
+        setFocusIdlePaused(true);
+    }
+}
+
+void Session::setFocusIdlePaused(bool paused)
+{
+    if (paused == m_StreamPausedForFocusLoss) {
+        return;
+    }
+
+#ifdef Q_OS_DARWIN
+    if (!paused && m_MacIdleOverlay) {
+        m_MacIdleOverlay->setVisible(false);
+    }
+#endif
+
+    const int err = LiRequestVideoPause(paused);
+    if (err != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "%s video transmission failed: %d",
+                    paused ? "Pausing" : "Resuming",
+                    err);
+        return;
+    }
+
+    m_StreamPausedForFocusLoss = paused;
+#ifdef Q_OS_DARWIN
+    if (paused && m_MacIdleOverlay) {
+        m_MacIdleOverlay->setVisible(true);
+    }
+#endif
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Video transmission %s after Moonlight focus change",
+                paused ? "paused" : "resumed");
+    updateStreamWindowTitle();
 }
 
 void Session::refreshStreamMonitor(bool force)
@@ -2089,6 +2147,18 @@ void Session::updateStreamWindowTitle()
                  .arg(clipboardOwner)
                  .arg(clipboardLength)
                  .arg(clipboardState);
+
+    if (m_StreamPausedForFocusLoss) {
+        title += QStringLiteral(" · Stream: paused (inactive)");
+    }
+    else if (!m_WindowFocused && m_FocusLostAt != 0 &&
+             (LiGetHostFeatureFlags() & LI_FF_VIDEO_PAUSE)) {
+        constexpr Uint64 FocusIdlePauseDelayMs = 30 * 1000;
+        const Uint64 elapsed = SDL_GetTicks64() - m_FocusLostAt;
+        const Uint64 remaining = elapsed < FocusIdlePauseDelayMs ?
+                                     FocusIdlePauseDelayMs - elapsed : 0;
+        title += QStringLiteral(" · Pause in: %1s").arg((remaining + 999) / 1000);
+    }
 
     if (title == m_LastStreamWindowTitle) {
         return;
@@ -2390,7 +2460,11 @@ void Session::exec()
             }
         },
     });
+    m_MacIdleOverlay = std::make_unique<MacIdleOverlay>(m_Window);
 #endif
+
+    m_WindowFocused = (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    m_FocusLostAt = m_WindowFocused ? 0 : SDL_GetTicks64();
 
     if (LiGetHostFeatureFlags() & LI_FF_LIVE_DISPLAY_SWITCH) {
         LiRequestHostDisplayList();
@@ -2401,6 +2475,7 @@ void Session::exec()
     // because we want to suspend all Qt processing until the stream is over.
     SDL_Event event;
     for (;;) {
+        updateFocusIdleState();
         followHostActiveWindow();
         refreshStreamMonitor();
 #if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(STEAM_LINK)
@@ -2513,12 +2588,21 @@ void Session::exec()
             // Early handling of some events
             switch (event.window.event) {
             case SDL_WINDOWEVENT_FOCUS_LOST:
+                if (m_WindowFocused) {
+                    m_WindowFocused = false;
+                    m_FocusLostAt = SDL_GetTicks64();
+                    updateStreamWindowTitle();
+                }
                 if (m_Preferences->muteOnFocusLoss) {
                     m_AudioMuted = true;
                 }
                 m_InputHandler->notifyFocusLost();
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
+                m_WindowFocused = true;
+                m_FocusLostAt = 0;
+                setFocusIdlePaused(false);
+                updateStreamWindowTitle();
                 if (m_Preferences->muteOnFocusLoss) {
                     m_AudioMuted = false;
                 }
@@ -2784,8 +2868,13 @@ void Session::exec()
 
 DispatchDeferredCleanup:
 #ifdef Q_OS_DARWIN
+    m_MacIdleOverlay.reset();
     m_MacStreamMonitor.reset();
 #endif
+    if (m_StreamPausedForFocusLoss) {
+        LiRequestVideoPause(false);
+        m_StreamPausedForFocusLoss = false;
+    }
     // Switch back to synchronous logging mode
     StreamUtils::exitAsyncLoggingMode();
 
