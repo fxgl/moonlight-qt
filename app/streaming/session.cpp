@@ -1912,6 +1912,26 @@ void Session::cycleRemoteDisplay(int direction)
     refreshStreamMonitor(true);
 }
 
+void Session::followHostActiveWindow()
+{
+    if (!m_Preferences->autoDisplaySwitch ||
+            !(LiGetHostFeatureFlags() & LI_FF_ACTIVE_WINDOW_DISPLAY)) {
+        return;
+    }
+
+    const Uint64 now = SDL_GetTicks64();
+    if (now - m_LastActiveWindowDisplayRequest < 500) {
+        return;
+    }
+    m_LastActiveWindowDisplayRequest = now;
+
+    const int err = LiRequestHostActiveWindowDisplay();
+    if (err != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Active-window display request failed: %d", err);
+    }
+}
+
 void Session::refreshStreamMonitor(bool force)
 {
     const Uint64 now = SDL_GetTicks64();
@@ -2020,11 +2040,15 @@ void Session::updateStreamWindowTitle()
                  .arg(height)
                  .arg(bitrateKbps / 1000.0, 0, 'f', 1);
 
+    const bool autoDisplaySwitch = m_Preferences->autoDisplaySwitch &&
+            (LiGetHostFeatureFlags() & LI_FF_ACTIVE_WINDOW_DISPLAY);
+    const QString screensLabel = autoDisplaySwitch ?
+                                     QStringLiteral("Screens auto") : QStringLiteral("Screens");
     if (!(LiGetHostFeatureFlags() & LI_FF_LIVE_DISPLAY_SWITCH)) {
-        title += QStringLiteral(" · Screens: unavailable");
+        title += QStringLiteral(" · %1: unavailable").arg(screensLabel);
     }
     else if (snapshot.displays.empty()) {
-        title += QStringLiteral(" · Screens: …");
+        title += QStringLiteral(" · %1: …").arg(screensLabel);
     }
     else {
         QStringList screenNumbers;
@@ -2034,7 +2058,7 @@ void Session::updateStreamWindowTitle()
                                      QStringLiteral("[%1]").arg(i + 1) :
                                      QString::number(i + 1));
         }
-        title += QStringLiteral(" · Screens: %1").arg(screenNumbers.join(','));
+        title += QStringLiteral(" · %1: %2").arg(screensLabel, screenNumbers.join(','));
 
         if (snapshot.currentDisplay >= 0 &&
                 snapshot.currentDisplay < static_cast<int>(snapshot.displays.size())) {
@@ -2377,6 +2401,7 @@ void Session::exec()
     // because we want to suspend all Qt processing until the stream is over.
     SDL_Event event;
     for (;;) {
+        followHostActiveWindow();
         refreshStreamMonitor();
 #if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(STEAM_LINK)
         // SDL 2.0.18 has a proper wait event implementation that uses platform
@@ -2388,7 +2413,9 @@ void Session::exec()
         // NB: This behavior was introduced in SDL 2.0.16, but had a few critical
         // issues that could cause indefinite timeouts, delayed joystick detection,
         // and other problems.
-        if (!SDL_WaitEventTimeout(&event, 1000)) {
+        const int eventTimeout = m_Preferences->autoDisplaySwitch &&
+                (LiGetHostFeatureFlags() & LI_FF_ACTIVE_WINDOW_DISPLAY) ? 500 : 1000;
+        if (!SDL_WaitEventTimeout(&event, eventTimeout)) {
             presence.runCallbacks();
             continue;
         }

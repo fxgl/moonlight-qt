@@ -13,6 +13,7 @@ The upstream Moonlight/Sunshine pair is optimized primarily for game streaming. 
 - **No clipboard overwrite on connection.** Moonlight does not publish stale local clipboard contents just because a stream started.
 - **Loop and origin suppression.** Clipboard text received from Sunshine is not echoed back, and client-originated writes are not mistaken for host-side changes.
 - **Direct standard paste.** `Cmd+V` on macOS and `Ctrl+V` elsewhere can send clipboard text directly to the focused remote application as Unicode.
+- **Active-window display following.** On compatible Sunshine hosts, Moonlight can automatically follow the foreground window when it moves between host monitors; the setting is enabled by default and refreshes twice per second.
 - **Client keyboard layout mode.** Printable text can be composed using the client's active keyboard layout and sent as Unicode, while shortcuts and non-text keys continue to use raw key events.
 
 Clipboard synchronization is opt-in, text-only, and limited to 60 KiB per update. Both endpoints must use the matching fxgl forks for the full feature set. The protocol additions live in the pinned `moonlight-common-c` submodule.

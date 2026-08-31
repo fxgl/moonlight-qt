@@ -187,6 +187,8 @@ private:
 
     void cycleRemoteDisplay(int direction);
 
+    void followHostActiveWindow();
+
     void refreshStreamMonitor(bool force = false);
 
     void updateStreamWindowTitle();
@@ -315,6 +317,7 @@ private:
     std::mutex m_AdaptiveQualityMutex;
     StreamMonitorModel m_StreamMonitorModel;
     Uint64 m_LastStreamMonitorUpdate = 0;
+    Uint64 m_LastActiveWindowDisplayRequest = 0;
     Uint64 m_LastAdaptiveStatusUpdate = 0;
     QString m_LastStreamWindowTitle;
 #ifdef Q_OS_DARWIN

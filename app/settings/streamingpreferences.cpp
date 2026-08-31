@@ -53,6 +53,7 @@
 #define SER_KEEPAWAKE "keepawake"
 #define SER_DIRECTCLIPBOARDPASTE "directclipboardpaste"
 #define SER_CLIPBOARDSYNC "clipboardsync"
+#define SER_AUTODISPLAYSWITCH "autodisplayswitch"
 #define SER_CLIENTKEYBOARDLAYOUT "clientkeyboardlayout"
 #define SER_CROSSPLATFORMSHORTCUTS "crossplatformshortcuts"
 #define SER_LANGUAGE "language"
@@ -159,6 +160,7 @@ void StreamingPreferences::reload()
     keepAwake = settings.value(SER_KEEPAWAKE, true).toBool();
     directClipboardPaste = settings.value(SER_DIRECTCLIPBOARDPASTE, true).toBool();
     clipboardSync = settings.value(SER_CLIPBOARDSYNC, true).toBool();
+    autoDisplaySwitch = settings.value(SER_AUTODISPLAYSWITCH, true).toBool();
     clientKeyboardLayout = settings.value(SER_CLIENTKEYBOARDLAYOUT, false).toBool();
     crossPlatformShortcuts = settings.value(SER_CROSSPLATFORMSHORTCUTS, false).toBool();
     enableHdr = settings.value(SER_HDR, false).toBool();
@@ -375,6 +377,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_KEEPAWAKE, keepAwake);
     settings.setValue(SER_DIRECTCLIPBOARDPASTE, directClipboardPaste);
     settings.setValue(SER_CLIPBOARDSYNC, clipboardSync);
+    settings.setValue(SER_AUTODISPLAYSWITCH, autoDisplaySwitch);
     settings.setValue(SER_CLIENTKEYBOARDLAYOUT, clientKeyboardLayout);
     settings.setValue(SER_CROSSPLATFORMSHORTCUTS, crossPlatformShortcuts);
 }

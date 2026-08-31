@@ -1367,6 +1367,23 @@ Flickable {
                 }
 
                 CheckBox {
+                    id: autoDisplaySwitchCheck
+                    hoverEnabled: true
+                    width: parent.width
+                    text: qsTr("Automatically follow the active window across host displays")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.autoDisplaySwitch
+                    onCheckedChanged: {
+                        StreamingPreferences.autoDisplaySwitch = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 10000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("On supported Sunshine hosts, Moonlight automatically switches the streamed display when the foreground window moves to or is activated on another monitor.")
+                }
+
+                CheckBox {
                     id: clipboardSyncCheck
                     hoverEnabled: true
                     width: parent.width

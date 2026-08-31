@@ -158,6 +158,7 @@ public:
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(bool directClipboardPaste MEMBER directClipboardPaste NOTIFY directClipboardPasteChanged)
     Q_PROPERTY(bool clipboardSync MEMBER clipboardSync NOTIFY clipboardSyncChanged)
+    Q_PROPERTY(bool autoDisplaySwitch MEMBER autoDisplaySwitch NOTIFY autoDisplaySwitchChanged)
     Q_PROPERTY(bool clientKeyboardLayout MEMBER clientKeyboardLayout NOTIFY clientKeyboardLayoutChanged)
     Q_PROPERTY(bool crossPlatformShortcuts MEMBER crossPlatformShortcuts NOTIFY crossPlatformShortcutsChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
@@ -196,6 +197,7 @@ public:
     bool keepAwake;
     bool directClipboardPaste;
     bool clipboardSync;
+    bool autoDisplaySwitch;
     bool clientKeyboardLayout;
     bool crossPlatformShortcuts;
     int packetSize;
@@ -249,6 +251,7 @@ signals:
     void keepAwakeChanged();
     void directClipboardPasteChanged();
     void clipboardSyncChanged();
+    void autoDisplaySwitchChanged();
     void clientKeyboardLayoutChanged();
     void crossPlatformShortcutsChanged();
     void languageChanged();
