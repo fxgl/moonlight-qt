@@ -632,8 +632,6 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_AudioSampleCount(0),
       m_DropAudioEndTime(0)
 {
-    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged,
-            this, &Session::syncClipboardToHost);
 }
 
 Session::~Session()
@@ -2171,33 +2169,32 @@ void Session::updateStreamWindowTitle()
 
 void Session::syncClipboardToHost()
 {
-    if (s_ActiveSession != this) {
+    if (s_ActiveSession != this || !m_Preferences->clipboardSync ||
+            !(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_SYNC)) {
         return;
     }
 
+    // Empty text means no text (e.g. an image was copied); don't wipe the host clipboard.
     const QByteArray utf8Text = QGuiApplication::clipboard()->text().toUtf8();
-    if (m_HasPendingRemoteClipboardText && utf8Text == m_LastRemoteClipboardText) {
-        m_ClipboardFromHost = true;
-        m_HasPendingRemoteClipboardText = false;
-        m_LastRemoteClipboardText.clear();
-        updateStreamWindowTitle();
-        return;
-    }
-
-    m_ClipboardFromHost = false;
-    updateStreamWindowTitle();
-
-    if (!m_Preferences->clipboardSync || !(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_SYNC)) {
+    if (utf8Text.isEmpty() || utf8Text == m_LastSyncedClipboardText) {
         return;
     }
 
     if (utf8Text.size() > 60 * 1024) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Clipboard text exceeds the 60 KiB synchronization limit");
+        m_LastSyncedClipboardText = utf8Text;
         return;
     }
 
-    LiSendClipboardTextEvent(utf8Text.constData(), static_cast<unsigned int>(utf8Text.size()));
+    if (LiSendClipboardTextEvent(utf8Text.constData(), static_cast<unsigned int>(utf8Text.size())) != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to send clipboard text to host");
+        return;
+    }
+
+    m_LastSyncedClipboardText = utf8Text;
+    m_ClipboardFromHost = false;
+    updateStreamWindowTitle();
 }
 
 void Session::flushWindowEvents()
@@ -2361,6 +2358,10 @@ void Session::exec()
         }
     }
 
+    // Push the local clipboard before the input handler tells the host we're focused.
+    if (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS) {
+        syncClipboardToHost();
+    }
     m_InputHandler->setWindow(m_Window);
 
     QSvgRenderer svgIconRenderer(QString(":/res/moonlight.svg"));
@@ -2556,11 +2557,9 @@ void Session::exec()
                 auto* utf8Text = static_cast<QByteArray*>(event.user.data1);
                 if (s_ActiveSession == this && m_Preferences->clipboardSync) {
                     m_ClipboardFromHost = true;
-                    m_HasPendingRemoteClipboardText = false;
+                    m_LastSyncedClipboardText = *utf8Text;
                     auto* clipboard = QGuiApplication::clipboard();
                     if (clipboard->text().toUtf8() != *utf8Text) {
-                        m_LastRemoteClipboardText = *utf8Text;
-                        m_HasPendingRemoteClipboardText = true;
                         clipboard->setText(QString::fromUtf8(*utf8Text));
                     }
                     updateStreamWindowTitle();
@@ -2606,6 +2605,9 @@ void Session::exec()
                 if (m_Preferences->muteOnFocusLoss) {
                     m_AudioMuted = false;
                 }
+                // Push local clipboard changes made while unfocused before the
+                // host snapshots its clipboard on focus gain.
+                syncClipboardToHost();
                 m_InputHandler->notifyFocusGained();
                 break;
             case SDL_WINDOWEVENT_LEAVE:
@@ -2804,6 +2806,11 @@ void Session::exec()
             break;
         case SDL_KEYMAPCHANGED:
             m_InputHandler->notifyKeyboardLayoutChanged();
+            break;
+        case SDL_CLIPBOARDUPDATE:
+            if (m_WindowFocused) {
+                syncClipboardToHost();
+            }
             break;
         case SDL_TEXTINPUT:
             presence.runCallbacks();

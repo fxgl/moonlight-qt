@@ -315,8 +315,8 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
-    QByteArray m_LastRemoteClipboardText;
-    bool m_HasPendingRemoteClipboardText = false;
+    // Last clipboard text known to be identical on client and host.
+    QByteArray m_LastSyncedClipboardText;
     bool m_ClipboardFromHost = false;
     std::optional<AdaptiveQualityController> m_AdaptiveQualityController;
     std::mutex m_AdaptiveQualityMutex;
