@@ -23,6 +23,17 @@ UNSIGNED=false
 SKIP_NOTARIZATION=false
 SKIP_TESTS=false
 RELEASE_NOTES_DIR=""
+# Oldest macOS both release apps must run on.
+MACOS_DEPLOYMENT_TARGET="14.2"
+# Sunshine dependencies built from source for MACOS_DEPLOYMENT_TARGET; Homebrew
+# bottles target the build host's macOS and would raise the app's minimum.
+OPENSSL_SRC_VERSION="3.5.9"
+OPENSSL_SRC_SHA256="603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
+OPUS_SRC_VERSION="1.6.1"
+OPUS_SRC_SHA256="6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
+MINIUPNPC_SRC_VERSION="2.3.3"
+MINIUPNPC_SRC_SHA256="d52a0afa614ad6c088cc9ddff1ae7d29c8c595ac5fdd321170a05f41e634bd1a"
+SUNSHINE_DEPS_PREFIX=""
 
 usage() {
   cat <<'EOF'
@@ -247,6 +258,7 @@ build_moonlight() {
   local dsym="${out}/Moonlight-${MOONLIGHT_VERSION}.dsym"
   [[ ! -d "${dsym}" ]] || ditto -c -k --sequesterRsrc --keepParent \
     "${dsym}" "${out}/Moonlight-${MOONLIGHT_VERSION}-dSYM.zip"
+  verify_min_macos "${app}"
   write_sha256 "${dmg}"
 }
 
@@ -263,6 +275,106 @@ verify_dmg_app() {
   return "${rc}"
 }
 
+# Fail when any Mach-O in the app requires macOS newer than MACOS_DEPLOYMENT_TARGET.
+verify_min_macos() {
+  local app="$1" file minos bad=false
+  while IFS= read -r -d '' file; do
+    [[ "$(file -b "${file}")" == Mach-O* ]] || continue
+    while IFS= read -r minos; do
+      [[ "$(printf '%s\n%s\n' "${minos}" "${MACOS_DEPLOYMENT_TARGET}" | sort -V | tail -n 1)" == \
+        "${MACOS_DEPLOYMENT_TARGET}" ]] && continue
+      printf '%s requires macOS %s\n' "${file#"${app}"/}" "${minos}" >&2
+      bad=true
+    done < <(vtool -show-build "${file}" 2>/dev/null |
+      awk '$1 == "cmd" { cmd = $2 }
+        $1 == "minos" || ($1 == "version" && cmd == "LC_VERSION_MIN_MACOSX") { print $2 }' |
+      sort -u)
+  done < <(find "${app}" -type f -print0)
+  [[ "${bad}" == false ]] ||
+    die "$(basename "${app}") requires macOS newer than ${MACOS_DEPLOYMENT_TARGET}"
+}
+
+verify_dmg_min_macos() {
+  local dmg="$1" app_name="$2" mount_dir rc=0
+  mount_dir="$(mktemp -d)"
+  printf 'Y\n' | hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${dmg}" >/dev/null
+  (verify_min_macos "${mount_dir}/${app_name}.app") || rc=$?
+  hdiutil detach "${mount_dir}" >/dev/null || rc=$?
+  rmdir "${mount_dir}" || true
+  return "${rc}"
+}
+
+fetch_source() {
+  local url="$1" sha256="$2" dest="$3"
+  if [[ ! -f "${dest}" ]]; then
+    curl -fsSL --retry 3 -o "${dest}.part" "${url}"
+    mv "${dest}.part" "${dest}"
+  fi
+  printf '%s  %s\n' "${sha256}" "${dest}" | shasum -a 256 -c - >/dev/null ||
+    die "checksum mismatch: ${dest}"
+}
+
+# Build static OpenSSL, Opus, and miniupnpc for MACOS_DEPLOYMENT_TARGET once per
+# version set; Sunshine links them statically instead of Homebrew bottles.
+build_sunshine_deps() {
+  local arch root src id
+  arch="$(uname -m)"
+  root="${SUNSHINE_DIR}/cmake-build-release-fxgl-deps"
+  id="macos${MACOS_DEPLOYMENT_TARGET}-${arch}-openssl${OPENSSL_SRC_VERSION}-opus${OPUS_SRC_VERSION}-miniupnpc${MINIUPNPC_SRC_VERSION}"
+  SUNSHINE_DEPS_PREFIX="${root}/${id}"
+  [[ ! -f "${SUNSHINE_DEPS_PREFIX}/.complete" ]] || return 0
+
+  log "Building Sunshine dependencies for macOS ${MACOS_DEPLOYMENT_TARGET} (${arch})"
+  src="${root}/src"
+  rm -rf "${SUNSHINE_DEPS_PREFIX}" "${src}/build"
+  mkdir -p "${src}/build" "${SUNSHINE_DEPS_PREFIX}"
+  fetch_source \
+    "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_SRC_VERSION}/openssl-${OPENSSL_SRC_VERSION}.tar.gz" \
+    "${OPENSSL_SRC_SHA256}" "${src}/openssl-${OPENSSL_SRC_VERSION}.tar.gz"
+  fetch_source \
+    "https://downloads.xiph.org/releases/opus/opus-${OPUS_SRC_VERSION}.tar.gz" \
+    "${OPUS_SRC_SHA256}" "${src}/opus-${OPUS_SRC_VERSION}.tar.gz"
+  fetch_source \
+    "https://github.com/miniupnp/miniupnp/releases/download/miniupnpc_${MINIUPNPC_SRC_VERSION//./_}/miniupnpc-${MINIUPNPC_SRC_VERSION}.tar.gz" \
+    "${MINIUPNPC_SRC_SHA256}" "${src}/miniupnpc-${MINIUPNPC_SRC_VERSION}.tar.gz"
+
+  (
+    export MACOSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}"
+    cd "${src}/build"
+    tar -xzf "../openssl-${OPENSSL_SRC_VERSION}.tar.gz"
+    tar -xzf "../opus-${OPUS_SRC_VERSION}.tar.gz"
+    tar -xzf "../miniupnpc-${MINIUPNPC_SRC_VERSION}.tar.gz"
+
+    cd "openssl-${OPENSSL_SRC_VERSION}"
+    ./Configure "darwin64-${arch}-cc" no-shared no-tests no-docs \
+      --prefix="${SUNSHINE_DEPS_PREFIX}" --libdir=lib \
+      "-mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"
+    make -j "${JOBS}"
+    make install_sw
+    cd ..
+
+    local cmake_common=(
+      -DCMAKE_BUILD_TYPE=Release
+      -DCMAKE_INSTALL_PREFIX="${SUNSHINE_DEPS_PREFIX}"
+      -DCMAKE_INSTALL_LIBDIR=lib
+      -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}"
+      -DBUILD_SHARED_LIBS=OFF
+    )
+    cmake -S "opus-${OPUS_SRC_VERSION}" -B opus-build "${cmake_common[@]}" \
+      -DOPUS_BUILD_PROGRAMS=OFF -DOPUS_BUILD_TESTING=OFF
+    cmake --build opus-build -j "${JOBS}"
+    cmake --install opus-build
+
+    cmake -S "miniupnpc-${MINIUPNPC_SRC_VERSION}" -B miniupnpc-build "${cmake_common[@]}" \
+      -DUPNPC_BUILD_STATIC=ON -DUPNPC_BUILD_SHARED=OFF \
+      -DUPNPC_BUILD_TESTS=OFF -DUPNPC_BUILD_SAMPLE=OFF
+    cmake --build miniupnpc-build -j "${JOBS}"
+    cmake --install miniupnpc-build
+  )
+  rm -rf "${src}/build"
+  touch "${SUNSHINE_DEPS_PREFIX}/.complete"
+}
+
 submit_notarization() {
   local artifact="$1" attempt
   for attempt in 1 2 3; do
@@ -277,17 +389,23 @@ submit_notarization() {
 }
 
 build_sunshine() {
-  log "Building Sunshine ${SUNSHINE_VERSION} ($(uname -m) macOS)"
-  local build="${SUNSHINE_DIR}/cmake-build-release-fxgl"
+  log "Building Sunshine ${SUNSHINE_VERSION} ($(uname -m) macOS ${MACOS_DEPLOYMENT_TARGET}+)"
+  build_sunshine_deps
+  local build="${SUNSHINE_DIR}/cmake-build-release-fxgl-macos${MACOS_DEPLOYMENT_TARGET}"
   local branch commit sign=false
   branch="$(git -C "${SUNSHINE_DIR}" branch --show-current)"
   commit="$(git -C "${SUNSHINE_DIR}" rev-parse --short HEAD)"
   [[ "${UNSIGNED}" == true ]] || sign=true
   (
     cd "${SUNSHINE_DIR}"
+    export MACOSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}"
+    export PKG_CONFIG_PATH="${SUNSHINE_DEPS_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
     BRANCH="${branch}" BUILD_VERSION="${SUNSHINE_VERSION}" COMMIT="${commit}" \
       cmake -B "${build}" -S . -DBUILD_DOCS=OFF -DBUILD_TESTS=ON \
         -DBUILD_WERROR=ON -DCMAKE_BUILD_TYPE=Release -DSUNSHINE_ENABLE_TRAY=ON \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}" \
+        -DOPENSSL_ROOT_DIR="${SUNSHINE_DEPS_PREFIX}" -DOPENSSL_USE_STATIC_LIBS=ON \
+        -DOpus_ROOT_DIR="${SUNSHINE_DEPS_PREFIX}" \
         -DSUNSHINE_PUBLISHER_NAME=fxgl \
         -DSUNSHINE_PUBLISHER_WEBSITE=https://github.com/fxgl/Sunshine \
         -DSUNSHINE_PUBLISHER_ISSUE_URL=https://github.com/fxgl/Sunshine/issues \
@@ -308,6 +426,7 @@ build_sunshine() {
   [[ -f "${source}" ]] || die "Sunshine DMG was not produced"
   mkdir -p "${dir}"
   cp "${source}" "${dmg}"
+  verify_dmg_min_macos "${dmg}" Sunshine
   [[ "${UNSIGNED}" == true ]] || verify_dmg_app "${dmg}" Sunshine false
   if [[ "${SKIP_NOTARIZATION}" == false ]]; then
     submit_notarization "${dmg}"
