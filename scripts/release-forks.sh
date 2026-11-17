@@ -37,7 +37,7 @@ Required:
   --sunshine-version VERSION     Numeric version, for example 2026.725.170000
 
 Signing:
-  --signing-identity ID          Developer ID Application identity with private key
+  --signing-identity ID          Developer ID Application identity name or SHA-1 hash
   --notary-profile PROFILE       notarytool Keychain profile name
   --skip-notarization            Sign without notarizing or stapling
   --unsigned                     Unsigned build (not allowed with publish)
@@ -131,7 +131,10 @@ check_signing() {
   fi
   [[ -n "${SIGNING_IDENTITY}" ]] ||
     die "--signing-identity is required (a .cer without its private key is insufficient)"
-  security find-identity -v -p codesigning | grep -F "\"${SIGNING_IDENTITY}\"" >/dev/null ||
+  # Accept the identity name or its SHA-1 hash (use the hash when expired
+  # certificates with the same name make codesign's name lookup ambiguous).
+  security find-identity -v -p codesigning |
+    grep -F -e "\"${SIGNING_IDENTITY}\"" -e " ${SIGNING_IDENTITY} " >/dev/null ||
     die "valid signing identity with private key not found: ${SIGNING_IDENTITY}"
   if [[ "${SKIP_NOTARIZATION}" == false ]]; then
     [[ -n "${NOTARY_PROFILE}" ]] ||
