@@ -1397,7 +1397,7 @@ Flickable {
                     ToolTip.delay: 1000
                     ToolTip.timeout: 10000
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Sends locally copied UTF-8 text to the host. Text copied on the host is transferred back only when the Moonlight window loses focus, and only if the host clipboard changed while it was focused. Images and files are not transferred.")
+                    ToolTip.text: qsTr("Sends locally copied UTF-8 text to the host. Text copied on the host is transferred back only when the Moonlight window loses focus, and only if the host clipboard changed while it was focused. Images (up to 16 MiB as PNG) are also transferred between macOS client and host. Files are not transferred.")
                 }
 
                 CheckBox {

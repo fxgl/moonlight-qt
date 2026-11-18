@@ -182,6 +182,11 @@ private:
 
     void syncClipboardToHost();
 
+    void syncClipboardImageToHost();
+
+    void handleClipboardImageChunk(uint32_t transferId, uint32_t totalLength,
+                                   uint32_t offset, const QByteArray& data);
+
     void updateAdaptiveQuality(int connectionStatus);
 
     void changeAdaptiveQuality(bool increase);
@@ -259,6 +264,10 @@ private:
     void clSetHostDisplayList(const char* payload, unsigned int length);
 
     static
+    void clSetClipboardImageChunk(uint32_t transferId, uint32_t totalLength,
+                                  uint32_t offset, const char* data, unsigned int length);
+
+    static
     int arInit(int audioConfiguration,
                const POPUS_MULTISTREAM_CONFIGURATION opusConfig,
                void* arContext, int arFlags);
@@ -317,6 +326,13 @@ private:
     Overlay::OverlayManager m_OverlayManager;
     // Last clipboard text known to be identical on client and host.
     QByteArray m_LastSyncedClipboardText;
+    // Pasteboard change count after the last image sync in either direction, so
+    // focus changes don't re-read or resend an unchanged image.
+    long m_LastSyncedClipboardChangeCount = -1;
+    // Host image transfer being reassembled; empty when none is in progress.
+    QByteArray m_IncomingClipboardImage;
+    uint32_t m_IncomingClipboardImageId = 0;
+    uint32_t m_IncomingClipboardImageLength = 0;
     bool m_ClipboardFromHost = false;
     std::optional<AdaptiveQualityController> m_AdaptiveQualityController;
     std::mutex m_AdaptiveQualityMutex;

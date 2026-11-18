@@ -30,6 +30,7 @@
 #define SDL_CODE_GAMECONTROLLER_SET_ADAPTIVE_TRIGGERS 105
 #define SDL_CODE_SET_CLIPBOARD_TEXT 106
 #define SDL_CODE_SET_HOST_DISPLAY_LIST 107
+#define SDL_CODE_SET_CLIPBOARD_IMAGE_CHUNK 108
 
 #include <openssl/rand.h>
 
@@ -45,6 +46,11 @@
 #include <QScreen>
 
 #include <climits>
+#include <utility>
+
+#ifdef Q_OS_DARWIN
+#include "macclipboard.h"
+#endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QQuickOpenGLUtils>
@@ -67,7 +73,8 @@ CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
     Session::clSetControllerLED,
     Session::clSetAdaptiveTriggers,
     Session::clSetClipboardText,
-    Session::clSetHostDisplayList
+    Session::clSetHostDisplayList,
+    Session::clSetClipboardImageChunk
 };
 
 Session* Session::s_ActiveSession;
@@ -300,6 +307,35 @@ void Session::clSetClipboardText(const char* text, unsigned int length)
     clipboardEvent.user.data1 = utf8Text;
     if (SDL_PushEvent(&clipboardEvent) != 1) {
         delete utf8Text;
+    }
+}
+
+namespace {
+struct ClipboardImageChunkEvent {
+    uint32_t transferId;
+    uint32_t totalLength;
+    uint32_t offset;
+    QByteArray data;
+};
+}
+
+void Session::clSetClipboardImageChunk(uint32_t transferId, uint32_t totalLength,
+                                       uint32_t offset, const char* data, unsigned int length)
+{
+    Session* session = s_ActiveSession;
+    if (!session || !session->m_Preferences->clipboardSync) {
+        return;
+    }
+
+    auto* chunk = new ClipboardImageChunkEvent { transferId, totalLength, offset,
+                                                 QByteArray(data, static_cast<qsizetype>(length)) };
+    SDL_Event chunkEvent = {};
+    chunkEvent.type = SDL_USEREVENT;
+    chunkEvent.user.code = SDL_CODE_SET_CLIPBOARD_IMAGE_CHUNK;
+    chunkEvent.user.data1 = chunk;
+    if (SDL_PushEvent(&chunkEvent) != 1) {
+        // The reassembler sees the gap and drops the transfer.
+        delete chunk;
     }
 }
 
@@ -1767,6 +1803,11 @@ bool Session::startConnectionAsync()
     }
 
     LiSetClipboardSyncEnabled(m_Preferences->clipboardSync);
+#ifdef Q_OS_DARWIN
+    LiSetClipboardImageSyncEnabled(m_Preferences->clipboardSync);
+#else
+    LiSetClipboardImageSyncEnabled(false);
+#endif
     LiSetAdaptiveBitrateEnabled(m_Preferences->adaptiveBitrate);
     initializeAdaptiveQuality();
     int err = LiStartConnection(&hostInfo, &m_StreamConfig, &k_ConnCallbacks,
@@ -2135,15 +2176,21 @@ void Session::updateStreamWindowTitle()
     }
 
     const int clipboardLength = QGuiApplication::clipboard()->text().size();
+    QString clipboardContent = QStringLiteral("%1 chars").arg(clipboardLength);
+#ifdef Q_OS_DARWIN
+    if (clipboardLength == 0 && MacClipboard::hasImage()) {
+        clipboardContent = QStringLiteral("image");
+    }
+#endif
     const QString clipboardOwner = m_ClipboardFromHost ?
                                        QStringLiteral("Remote") : QStringLiteral("Local");
     const QString clipboardState = !m_Preferences->clipboardSync ?
                                        QStringLiteral("off") :
                                    !(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_SYNC) ?
                                        QStringLiteral("unsupported") : QStringLiteral("synced");
-    title += QStringLiteral(" · Clipboard: %1 · %2 chars · %3")
+    title += QStringLiteral(" · Clipboard: %1 · %2 · %3")
                  .arg(clipboardOwner)
-                 .arg(clipboardLength)
+                 .arg(clipboardContent)
                  .arg(clipboardState);
 
     if (m_StreamPausedForFocusLoss) {
@@ -2174,9 +2221,13 @@ void Session::syncClipboardToHost()
         return;
     }
 
-    // Empty text means no text (e.g. an image was copied); don't wipe the host clipboard.
     const QByteArray utf8Text = QGuiApplication::clipboard()->text().toUtf8();
-    if (utf8Text.isEmpty() || utf8Text == m_LastSyncedClipboardText) {
+    if (utf8Text.isEmpty()) {
+        // No text, but the clipboard may hold an image. Never wipe the host clipboard.
+        syncClipboardImageToHost();
+        return;
+    }
+    if (utf8Text == m_LastSyncedClipboardText) {
         return;
     }
 
@@ -2195,6 +2246,98 @@ void Session::syncClipboardToHost()
     m_LastSyncedClipboardText = utf8Text;
     m_ClipboardFromHost = false;
     updateStreamWindowTitle();
+}
+
+void Session::syncClipboardImageToHost()
+{
+#ifdef Q_OS_DARWIN
+    if (!(LiGetHostFeatureFlags() & LI_FF_CLIPBOARD_IMAGE_SYNC)) {
+        return;
+    }
+
+    // The change count avoids re-encoding and resending an unchanged image on every focus gain.
+    const long changeCount = MacClipboard::changeCount();
+    if (changeCount == m_LastSyncedClipboardChangeCount) {
+        return;
+    }
+
+    const QByteArray png = MacClipboard::imagePng(LI_CLIPBOARD_IMAGE_MAX_SIZE);
+    if (png.isEmpty()) {
+        if (MacClipboard::hasImage()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Clipboard image exceeds the %d MiB synchronization limit",
+                        LI_CLIPBOARD_IMAGE_MAX_SIZE / (1024 * 1024));
+        }
+        m_LastSyncedClipboardChangeCount = changeCount;
+        return;
+    }
+
+    if (LiSendClipboardImage(png.constData(), static_cast<unsigned int>(png.size())) != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to send clipboard image to host");
+        return;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Sending %d byte clipboard image to host",
+                static_cast<int>(png.size()));
+    m_LastSyncedClipboardChangeCount = changeCount;
+    // The host clipboard no longer holds the last synced text.
+    m_LastSyncedClipboardText.clear();
+    m_ClipboardFromHost = false;
+    updateStreamWindowTitle();
+#endif
+}
+
+void Session::handleClipboardImageChunk(uint32_t transferId, uint32_t totalLength,
+                                        uint32_t offset, const QByteArray& data)
+{
+#ifdef Q_OS_DARWIN
+    if (offset == 0) {
+        m_IncomingClipboardImageId = transferId;
+        m_IncomingClipboardImageLength = totalLength;
+        m_IncomingClipboardImage.clear();
+        m_IncomingClipboardImage.reserve(static_cast<qsizetype>(totalLength));
+    }
+    else if (transferId != m_IncomingClipboardImageId) {
+        // Remainder of an abandoned transfer
+        return;
+    }
+    else if (m_IncomingClipboardImage.isEmpty() ||
+             totalLength != m_IncomingClipboardImageLength ||
+             offset != static_cast<uint32_t>(m_IncomingClipboardImage.size())) {
+        // A chunk was lost
+        if (!m_IncomingClipboardImage.isEmpty()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Dropping incomplete clipboard image from host (%d of %u bytes)",
+                        static_cast<int>(m_IncomingClipboardImage.size()), m_IncomingClipboardImageLength);
+        }
+        m_IncomingClipboardImage = QByteArray();
+        return;
+    }
+
+    m_IncomingClipboardImage.append(data);
+    if (static_cast<uint32_t>(m_IncomingClipboardImage.size()) < m_IncomingClipboardImageLength) {
+        return;
+    }
+
+    const QByteArray png = std::exchange(m_IncomingClipboardImage, QByteArray());
+    if (!MacClipboard::setImagePng(png)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to set %d byte clipboard image from host",
+                    static_cast<int>(png.size()));
+        return;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Received %d byte clipboard image from host",
+                static_cast<int>(png.size()));
+    m_LastSyncedClipboardChangeCount = MacClipboard::changeCount();
+    m_LastSyncedClipboardText.clear();
+    m_ClipboardFromHost = true;
+    updateStreamWindowTitle();
+#else
+    Q_UNUSED(transferId);
+    Q_UNUSED(totalLength);
+    Q_UNUSED(offset);
+    Q_UNUSED(data);
+#endif
 }
 
 void Session::flushWindowEvents()
@@ -2565,6 +2708,14 @@ void Session::exec()
                     updateStreamWindowTitle();
                 }
                 delete utf8Text;
+                break;
+            }
+            case SDL_CODE_SET_CLIPBOARD_IMAGE_CHUNK: {
+                auto* chunk = static_cast<ClipboardImageChunkEvent*>(event.user.data1);
+                if (s_ActiveSession == this && m_Preferences->clipboardSync) {
+                    handleClipboardImageChunk(chunk->transferId, chunk->totalLength, chunk->offset, chunk->data);
+                }
+                delete chunk;
                 break;
             }
             case SDL_CODE_SET_HOST_DISPLAY_LIST: {
